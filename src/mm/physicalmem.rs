@@ -6,11 +6,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use align_address::Align;
 use free_list::{FreeList, PageLayout, PageRange};
 use hermit_sync::InterruptTicketMutex;
-use memory_addresses::VirtAddr;
 
-#[cfg(all(target_arch = "x86_64", feature = "hermit-entry"))]
-use crate::arch::mm::paging::PageTableEntryFlagsExt;
-use crate::arch::mm::paging::{self, HugePageSize, LargePageSize, PageSize};
+use crate::arch::mm::paging::{self, PageSize};
 use crate::env::{self, MemmapType, StartInfo};
 use crate::mm::device_alloc::DeviceAlloc;
 use crate::mm::{PageRangeAllocator, PageRangeBox};
@@ -66,17 +63,15 @@ pub fn total_memory_size() -> usize {
 pub unsafe fn map_frame_range(frame_range: PageRange) {
 	use memory_addresses::PhysAddr;
 
-	use crate::arch::mm::paging::PageTableEntryFlags;
-
 	cfg_select! {
 		target_arch = "aarch64" => {
 			type IdentityPageSize = paging::BasePageSize;
 		}
 		target_arch = "riscv64" => {
-			type IdentityPageSize = HugePageSize;
+			type IdentityPageSize = paging::HugePageSize;
 		}
 		target_arch = "x86_64" => {
-			type IdentityPageSize = LargePageSize;
+			type IdentityPageSize = paging::LargePageSize;
 		}
 	}
 
@@ -91,22 +86,6 @@ pub unsafe fn map_frame_range(frame_range: PageRange) {
 		.step_by(IdentityPageSize::SIZE.try_into().unwrap())
 		.map(|addr| PhysAddr::new(addr.try_into().unwrap()))
 		.for_each(paging::identity_map::<IdentityPageSize>);
-
-	// Map the physical memory again if DeviceAlloc operates at an offset
-	if DeviceAlloc.phys_offset() != VirtAddr::zero() {
-		let flags = {
-			let mut flags = PageTableEntryFlags::empty();
-			flags.normal().writable().execute_disable();
-			flags
-		};
-		(start..end)
-			.step_by(IdentityPageSize::SIZE.try_into().unwrap())
-			.for_each(|addr| {
-				let phys_addr = PhysAddr::new(addr.try_into().unwrap());
-				let virt_addr = VirtAddr::from_ptr(DeviceAlloc.ptr_from::<()>(phys_addr));
-				paging::map::<IdentityPageSize>(virt_addr, phys_addr, 1, flags);
-			});
-	}
 }
 
 unsafe fn detect_from_start_info() {
@@ -124,7 +103,7 @@ unsafe fn detect_from_start_info() {
 		// don't accidentally clash with hardcoded low addresses, such as `SMP_BOOT_CODE_ADDRESS`
 		// in x86_64 with SMP enabled. We use a 2MIB size for now, but this is arbitrary, and could
 		// likely be lowered.
-		start_addr = start_addr.max(LargePageSize::SIZE as usize);
+		start_addr = start_addr.max(paging::LargePageSize::SIZE as usize);
 
 		#[cfg(all(target_arch = "x86_64", feature = "hermit-entry"))]
 		if paging::is_recursive() {
@@ -202,12 +181,7 @@ unsafe fn detect_from_start_info() {
 }
 
 unsafe fn init() {
-	if cfg!(target_arch = "x86_64") && DeviceAlloc.phys_offset() != VirtAddr::zero() {
-		let start = DeviceAlloc.phys_offset();
-		let count = DeviceAlloc.phys_offset().as_u64() / HugePageSize::SIZE;
-		let count = usize::try_from(count).unwrap();
-		paging::unmap::<HugePageSize>(start, count);
-	}
+	DeviceAlloc::init();
 
 	unsafe {
 		detect_from_start_info();
