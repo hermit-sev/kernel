@@ -1024,7 +1024,7 @@ impl VirtioNetDriver {
 		// - the num_queues is found in the ComCfg struct of the device and defines the maximal number
 		// of supported queues.
 		let num_vqs = if dev_cfg.features.contains(virtio::net::F::MQ) {
-			(dev_cfg.raw.as_ptr().max_virtqueue_pairs().read().to_ne() * 2).min(MAX_NUM_VQ)
+			((dev_cfg.raw.as_ptr().max_virtqueue_pairs().read().to_ne() & 0x7fff) * 2).min(MAX_NUM_VQ)
 		} else {
 			// Minimal number of virtqueues defined in the standard v1.1. - 5.1.5 Step 1
 			2
