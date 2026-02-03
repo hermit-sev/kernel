@@ -108,6 +108,11 @@ pub(crate) fn init() {
 	unsafe {
 		PageAlloc::init();
 	}
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+	unsafe {
+		paging::walk_make_encrypted();
+	}
+
 	#[cfg(target_arch = "riscv64")]
 	unsafe {
 		paging::enable_page_table();
