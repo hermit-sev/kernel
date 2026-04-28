@@ -101,7 +101,7 @@ pub(crate) fn claim_initial_heap() {
 #[cfg(target_os = "none")]
 #[cfg_attr(feature = "amd-sev", expect(unreachable_code, unused_assignments, unused_variables))]
 pub(crate) fn init() {
-	use crate::arch::mm::paging;
+	use arch::mm::paging;
 
 	#[cfg(not(target_arch = "riscv64"))]
 	unsafe {
