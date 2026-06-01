@@ -186,10 +186,10 @@ impl DeviceFreeList {
 		// Remove identity mapping
 		paging::unmap::<DeviceAllocIncrement>(identity_mapping, 1);
 
-        // Add mapping at the device offset
-        let flags = PageTableEntryFlags::WRITABLE
-            | PageTableEntryFlags::NO_EXECUTE
-            | PageTableEntryFlags::WRITE_THROUGH;
+		// Add mapping at the device offset
+        // TODO: we should in theory set .device() here, but this disables cache and slows down
+        // ...operations on shared memory. Maybe we can get away with this???
+        let flags = PageTableEntryFlags::WRITABLE | PageTableEntryFlags::NO_EXECUTE;
 
         let phys_addr = frame.start_address().into();
         let virt_addr = VirtAddr::from_ptr(DeviceAlloc.ptr_from::<()>(phys_addr));
