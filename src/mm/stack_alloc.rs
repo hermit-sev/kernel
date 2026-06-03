@@ -73,6 +73,9 @@ pub fn allocate_stack(requested_size: usize) -> StackAllocation {
 	// Map first page to a disabled page full of a marker, then unmap it
 	let mut flags = PageTableEntryFlags::empty();
 	flags.normal().writable().execute_disable();
+	#[cfg(feature = "amd-sev")]
+	flags.set_encrypted(true);
+
 	paging::map::<BasePageSize>(virt_addr_start, phys_addr_start, 1, flags);
 	unsafe {
 		let marker_pos = virt_addr_start.add(BasePageSize::SIZE as usize - size_of::<u64>());
@@ -86,6 +89,9 @@ pub fn allocate_stack(requested_size: usize) -> StackAllocation {
 
 	let mut flags = PageTableEntryFlags::empty();
 	flags.normal().writable().execute_disable();
+	#[cfg(feature = "amd-sev")]
+	flags.set_encrypted(true);
+
 	paging::map::<BasePageSize>(
 		virt_addr_stack_start,
 		phys_addr_stack_start,

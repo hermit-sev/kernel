@@ -56,6 +56,11 @@ pub unsafe trait StartInfo {
 		None
 	}
 
+	#[cfg(feature = "amd-sev")]
+	fn cc_blob_addr(&self) -> Option<NonZero<usize>> {
+		None
+	}
+
 	fn memmap(&self) -> impl Iterator<Item = MemmapEntry> {
 		iter::empty()
 	}

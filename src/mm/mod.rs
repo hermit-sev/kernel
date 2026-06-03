@@ -44,13 +44,13 @@ pub(crate) mod device_alloc;
 mod page_range_alloc;
 mod physicalmem;
 pub mod stack_alloc;
-mod virtualmem;
+pub(crate) mod virtualmem;
 
 use core::alloc::Layout;
 use core::mem::MaybeUninit;
 
 use align_address::Align;
-use free_list::{PageLayout, PageRange};
+use free_list::PageLayout;
 use hermit_sync::RawInterruptTicketMutex;
 pub use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(target_os = "none")]
@@ -297,58 +297,41 @@ pub(crate) fn print_information() {
 	info!("{PageAlloc}");
 }
 
-/// Maps a given physical address and size in virtual space and returns address.
+/// Maps a given physical address, corresponding to a device, in virtual space and returns address.
 #[cfg(feature = "pci")]
 pub(crate) fn device_map(
 	physical_address: PhysAddr,
 	size: usize,
-	writable: bool,
-	no_execution: bool,
 	no_cache: bool,
 ) -> VirtAddr {
 	use crate::arch::mm::paging::PageTableEntryFlags;
 	#[cfg(target_arch = "x86_64")]
 	use crate::arch::mm::paging::PageTableEntryFlagsExt;
 
+	assert!(physical_address.is_aligned_to(BasePageSize::SIZE));
+	let identity_mapping = VirtAddr::new(physical_address.as_u64());
+
 	let size = size.align_up(BasePageSize::SIZE as usize);
 	let count = size / BasePageSize::SIZE as usize;
 
 	let mut flags = PageTableEntryFlags::empty();
 	flags.normal();
-	if writable {
-		flags.writable();
-	}
-	if no_execution {
-		flags.execute_disable();
-	}
+	flags.writable();
+	flags.execute_disable();
+
 	if no_cache {
 		flags.device();
 	}
 
-	let layout = PageLayout::from_size(size).unwrap();
-	let page_range = PageAlloc::allocate(layout).unwrap();
-	let virtual_address = VirtAddr::from(page_range.start());
+    let layout = PageLayout::from_size(size).unwrap();
+    let page_range = PageAlloc::allocate(layout).unwrap();
+    let virtual_address = VirtAddr::from(page_range.start());
+
+	// Remove existing identity mapping
+	arch::mm::paging::unmap::<BasePageSize>(identity_mapping, 1);
+
+	// Add new mapping
 	arch::mm::paging::map::<BasePageSize>(virtual_address, physical_address, count, flags);
 
 	virtual_address
-}
-
-#[allow(dead_code)]
-/// Unmaps virtual address, without 'freeing' physical memory it is mapped to!
-pub(crate) fn unmap(virtual_address: VirtAddr, size: usize) {
-	let size = size.align_up(BasePageSize::SIZE as usize);
-
-	if virtual_to_physical(virtual_address).is_some() {
-		arch::mm::paging::unmap::<BasePageSize>(
-			virtual_address,
-			size / BasePageSize::SIZE as usize,
-		);
-
-		let range = PageRange::from_start_len(virtual_address.as_usize(), size).unwrap();
-		unsafe {
-			PageAlloc::deallocate(range);
-		}
-	} else {
-		panic!("No page table entry for virtual address {virtual_address:p}");
-	}
 }

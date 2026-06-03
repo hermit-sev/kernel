@@ -1,6 +1,8 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::sev_guest_ioctl::SevGuestIoCtl;
 use crate::errno::Errno;
 use crate::fd::null_file::NullFile;
 use crate::fd::random_file::RandomFile;
@@ -35,6 +37,10 @@ impl VfsNode for DevDirectory {
 				RandomFile,
 			)))),
 			"null" => Ok(Arc::new(async_lock::RwLock::new(Fd::NullFile(NullFile)))),
+			#[cfg(feature = "amd-sev")]
+			"sev-guest" => Ok(Arc::new(async_lock::RwLock::new(Fd::SevGuest(
+				SevGuestIoCtl,
+			)))),
 			_ => Err(Errno::Noent),
 		}
 	}

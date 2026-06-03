@@ -47,6 +47,19 @@ unsafe impl<T: FdtStartInfo> StartInfo for T {
 		NonZero::new(rsdp)
 	}
 
+	/// Returns the EFI CC Blob physical address if available.
+	#[cfg(feature = "amd-sev")]
+	fn cc_blob_addr(&self) -> Option<NonZero<usize>> {
+		let cc_blob = self
+			.fdt()?
+			.find_node("/hermit,efi_sev_snp_cc_blob")?
+			.reg()?
+			.next()?
+			.starting_address
+			.addr();
+		NonZero::new(cc_blob)
+	}
+
 	fn modules(&self) -> impl Iterator<Item = Module> {
 		fn initrd(fdt: Fdt<'_>) -> Option<Module> {
 			let chosen = fdt.find_node("/chosen")?;

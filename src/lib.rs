@@ -116,6 +116,9 @@ extern crate log;
 #[cfg(not(target_os = "none"))]
 #[macro_use]
 extern crate std;
+#[cfg(feature = "amd-sev")]
+#[macro_use]
+extern crate static_assertions;
 
 #[macro_use]
 mod macros;

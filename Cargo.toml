@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 [package]
 name = "hermit-kernel"
 version = "0.13.2"
@@ -351,6 +353,9 @@ trace = ["net-trace"]
 ## An alias for the `virtio-vsock` feature.
 vsock = ["virtio-vsock"]
 
+## Support for AMD-SEV SNP
+amd-sev = ["dep:ghcb"]
+
 [lints]
 workspace = true
 
@@ -400,6 +405,25 @@ volatile = "0.6"
 zeroize = "1.9.0"
 zerocopy = "0.8.56"
 
+static_assertions = "1.1.0"
+ghcb = { version = "0.1.1", optional = true, features = ["logging"] }
+
+[profile.dev.package.polyval]
+# There is a weird compiler bug for target x86_64-unknown-none... We must therefore use the soft implementation.
+rustflags = ["--cfg", "polyval_backend=\"soft\""]
+
+[profile.release.package.polyval]
+# There is a weird compiler bug for target x86_64-unknown-none... We must therefore use the soft implementation.
+rustflags = ["--cfg", "polyval_backend=\"soft\""]
+
+[profile.dev.package.aes]
+# There is a weird compiler bug for target x86_64-unknown-none... We must therefore use the soft implementation.
+rustflags = ["--cfg", "aes_backend=\"soft\""]
+
+[profile.release.package.aes]
+# There is a weird compiler bug for target x86_64-unknown-none... We must therefore use the soft implementation.
+rustflags = ["--cfg", "aes_backend=\"soft\""]
+
 [dependencies.smoltcp]
 version = "0.14"
 optional = true
@@ -421,7 +445,7 @@ free-list = { version = "0.3", features = ["x86_64"] }
 memory_addresses = { version = "0.4", default-features = false, features = ["x86_64", "conv-x86_64"] }
 raw-cpuid = "11"
 uart_16550 = { version = "0.8", features = ["embedded-io"] }
-x86_64 = { version = "0.15", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
+x86_64 = { version = "0.15", default-features = false, features = ["instructions", "abi_x86_interrupt", "memory_encryption"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "11"

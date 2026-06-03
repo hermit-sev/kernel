@@ -61,6 +61,8 @@ pub(crate) enum Fd {
 	NullFile(NullFile),
 	#[cfg(feature = "uhyve")]
 	UhyveDirectoryHandle(UhyveDirectoryHandle),
+	#[cfg(feature = "amd-sev")]
+	SevGuest(crate::arch::kernel::amd_sev::sev_guest_ioctl::SevGuestIoCtl),
 }
 
 macro_rules! fd_from {
@@ -112,6 +114,8 @@ fd_from! {
 	NullFile(NullFile),
 	#[cfg(feature = "uhyve")]
 	UhyveDirectoryHandle(UhyveDirectoryHandle),
+	#[cfg(feature = "amd-sev")]
+	SevGuest(crate::arch::kernel::amd_sev::sev_guest_ioctl::SevGuestIoCtl),
 }
 
 impl ObjectInterface for Fd {
@@ -147,6 +151,8 @@ impl ObjectInterface for Fd {
 			Self::NullFile(fd) => fd,
 			#[cfg(feature = "uhyve")]
 			Self::UhyveDirectoryHandle(fd) => fd,
+			#[cfg(feature = "amd-sev")]
+			Self::SevGuest(fd) => fd,
 		} {
 			async fn poll(&self, event: PollEvent) -> io::Result<PollEvent>;
 			async fn read(&self, buf: &mut [u8]) -> io::Result<usize>;

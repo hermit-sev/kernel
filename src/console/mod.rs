@@ -176,10 +176,22 @@ pub fn _print(args: fmt::Arguments<'_>) {
 }
 
 #[doc(hidden)]
+#[cfg(not(feature = "amd-sev"))]
 pub fn _panic_print(args: fmt::Arguments<'_>) {
 	let mut console = unsafe { CONSOLE.make_guard_unchecked() };
 	console.write_fmt(args).ok();
 	mem::forget(console);
+}
+
+#[doc(hidden)]
+#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+pub fn _panic_print(args: fmt::Arguments<'_>) {
+	let console = crate::arch::kernel::serial::get_panic_port();
+	unsafe {
+		let mut console = console.make_guard_unchecked();
+		let _ = console.write_fmt(args);
+		mem::forget(console);
+	}
 }
 
 #[cfg(all(test, not(target_os = "none")))]

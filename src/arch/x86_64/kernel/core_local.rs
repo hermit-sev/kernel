@@ -11,6 +11,8 @@ use hermit_sync::{RawRwSpinLock, RawSpinMutex};
 use x86_64::VirtAddr;
 use x86_64::registers::model_specific::GsBase;
 use x86_64::structures::tss::TaskStateSegment;
+#[cfg(feature = "amd-sev")]
+use ghcb::structures::channel::GhcbChannel;
 
 use super::CPU_ONLINE;
 use super::interrupts::{IRQ_COUNTERS, IrqStatistics};
@@ -23,7 +25,7 @@ use crate::scheduler::{CoreId, PerCoreScheduler};
 pub(crate) struct CoreLocal {
 	this: *const Self,
 	/// Sequential ID of this CPU Core.
-	core_id: CoreId,
+	pub core_id: CoreId,
 	/// Scheduler for this CPU Core.
 	scheduler: Cell<*mut PerCoreScheduler>,
 	/// Task State Segment (TSS) allocated for this CPU Core.
@@ -38,6 +40,9 @@ pub(crate) struct CoreLocal {
 	/// Queues to handle incoming requests from the other cores
 	#[cfg(feature = "smp")]
 	pub scheduler_input: InterruptTicketMutex<SchedulerInput>,
+
+	#[cfg(feature = "amd-sev")]
+	pub ghcb: hermit_sync::OnceCell<GhcbChannel>
 }
 
 impl CoreLocal {
@@ -64,6 +69,8 @@ impl CoreLocal {
 			ex: StaticLocalExecutor::new(),
 			#[cfg(feature = "smp")]
 			scheduler_input: InterruptTicketMutex::new(SchedulerInput::new()),
+			#[cfg(feature = "amd-sev")]
+			ghcb: hermit_sync::OnceCell::new()
 		};
 		let this = if core_id == 0 {
 			take_static::take_static! {

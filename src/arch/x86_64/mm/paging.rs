@@ -105,6 +105,8 @@ pub use x86_64::structures::paging::{
 };
 
 use crate::arch::kernel::core_local::is_kernel_task;
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::set_encrypted;
 
 /// Returns a mapping of the physical memory where physical address is equal to the virtual address (no offset)
 pub unsafe fn identity_mapped_page_table() -> OffsetPageTable<'static> {
@@ -245,6 +247,12 @@ where
 	let flags = {
 		let mut flags = PageTableEntryFlags::empty();
 		flags.normal().writable().execute_disable();
+
+		#[cfg(feature = "amd-sev")]
+		{
+			flags.set_encrypted(true);
+		}
+
 		flags
 	};
 
@@ -263,12 +271,25 @@ where
 pub fn identity_map<S>(phys_addr: PhysAddr)
 where
 	S: PageSize + fmt::Debug,
+	for<'a> OffsetPageTable<'a>: Mapper<S>
+{
+	let flags =
+		PageTableEntryFlags::PRESENT
+            | PageTableEntryFlags::WRITABLE
+			| PageTableEntryFlags::NO_EXECUTE;
+
+	#[cfg(feature = "amd-sev")]
+	let flags = set_encrypted(flags);
+
+	identity_map_with_flags::<S>(phys_addr, flags)
+}
+
+pub fn identity_map_with_flags<S>(phys_addr: PhysAddr, flags: PageTableEntryFlags)
+where
+	S: PageSize + fmt::Debug,
 	for<'a> OffsetPageTable<'a>: Mapper<S>,
 {
 	let frame = PhysFrame::<S>::from_start_address(phys_addr.into()).unwrap();
-	let flags = PageTableEntryFlags::PRESENT
-		| PageTableEntryFlags::WRITABLE
-		| PageTableEntryFlags::NO_EXECUTE;
 	let mapper_result =
 		unsafe { identity_mapped_page_table().identity_map(frame, flags, &mut FrameAlloc) };
 
@@ -298,11 +319,7 @@ fn split_page<S: PageSize>(page: Page<S>) {
 	let flags = PageTableEntryFlags::WRITABLE | PageTableEntryFlags::NO_EXECUTE | PageTableEntryFlags::PRESENT;
 
 	#[cfg(feature = "amd-sev")]
-	let flags = {
-		let mut flags = flags;
-		flags.set_encrypted(true);
-		flags
-	};
+	let flags = set_encrypted(flags);
 
 	map::<Size4KiB>(pt_page, pt_frame.start_address().into(), 1, flags);
 
@@ -517,7 +534,7 @@ fn ensure_p4_writable() {
 		Page::<Size4KiB>::from_start_address(p4_addr).unwrap()
 	};
 
-	let TranslateResult::Mapped { frame, flags, .. } = pt.translate(p4_page.start_address()) else {
+	let TranslateResult::Mapped { flags, .. } = pt.translate(p4_page.start_address()) else {
 		unreachable!()
 	};
 
@@ -526,15 +543,6 @@ fn ensure_p4_writable() {
 	}
 
 	debug!("Making P4 table writable...");
-
-	let make_writable = || unsafe {
-		let flags = flags | PageTableEntryFlags::WRITABLE;
-		match frame {
-			MappedFrame::Size1GiB(_) => pt.set_flags_p3_entry(p4_page, flags).unwrap().ignore(),
-			MappedFrame::Size2MiB(_) => pt.set_flags_p2_entry(p4_page, flags).unwrap().ignore(),
-			MappedFrame::Size4KiB(_) => pt.update_flags(p4_page, flags).unwrap().ignore(),
-		}
-	};
 
 	unsafe fn without_protect<F, R>(f: F) -> R
 	where
@@ -551,7 +559,56 @@ fn ensure_p4_writable() {
 		ret
 	}
 
-	unsafe { without_protect(make_writable) }
+	let (p4_frame, _) = Cr3::read_raw();
+	unsafe {
+		without_protect(||
+			make_page_table_writable(&mut pt, p4_frame, 4)
+		);
+	};
+}
+
+unsafe fn make_page_table_writable(page_table: &mut OffsetPageTable<'static>, pt_frame: PhysFrame, level: u8) {
+	let pt_address = page_table.phys_offset() + pt_frame.start_address().as_u64();
+	let pt = unsafe {
+		pt_address.as_ptr::<PageTable>().as_ref().unwrap()
+	};
+
+	// Unmap the page table
+	let TranslateResult::Mapped { frame, flags, .. } = page_table.translate(pt_address) else {
+		unreachable!()
+	};
+
+	#[cfg(feature = "amd-sev")]
+	if !flags.is_encrypted() {
+		panic!("Page table {pt_frame:x?}, is mapped from non encrypted memory!");
+	}
+
+	if !flags.contains(PageTableEntryFlags::WRITABLE) {
+		let flags = flags | PageTableEntryFlags::WRITABLE;
+		let page = Page::<Size4KiB>::containing_address(pt_address);
+		unsafe {
+			match frame {
+				MappedFrame::Size1GiB(_) => page_table.set_flags_p3_entry(page, flags).unwrap().ignore(),
+				MappedFrame::Size2MiB(_) => page_table.set_flags_p2_entry(page, flags).unwrap().ignore(),
+				MappedFrame::Size4KiB(_) => page_table.update_flags(page, flags).unwrap().ignore(),
+			}
+		}
+		warn!("Page table {pt_frame:x?}, was mapped from RO memory!");
+	}
+
+	for entry in pt.iter() {
+		if entry.is_unused() {
+			continue;
+		}
+
+		let is_page_table = level > 1 && !entry.flags().contains(PageTableEntryFlags::HUGE_PAGE);
+		if is_page_table {
+			let phys = entry.frame().unwrap();
+			unsafe {
+				make_page_table_writable(page_table, phys, level - 1);
+			}
+		}
+	}
 }
 
 #[cfg(feature = "common-os")]

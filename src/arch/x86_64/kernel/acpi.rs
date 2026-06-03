@@ -1,11 +1,19 @@
 use core::{ptr, slice, str};
 
+#[cfg(feature = "amd-sev")]
+use ghcb::protocols::ioio::IoIoPort as Port;
+#[cfg(feature = "amd-sev")]
+use ghcb::structures::ChannelManager;
+
 use align_address::Align;
 use hermit_sync::OnceCell;
 use memory_addresses::{PhysAddr, VirtAddr};
+#[cfg(not(feature = "amd-sev"))]
 use x86_64::instructions::port::Port;
 use x86_64::structures::paging::{PageTableFlags, PhysFrame};
 
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::allocations::ghcb::EmergencyChannelManager;
 use crate::arch::mm::paging;
 use crate::arch::mm::paging::{BasePageSize, LargePageSize, PageSize};
 use crate::env::{self, StartInfo};
@@ -448,14 +456,23 @@ pub fn get_mcfg_table() -> Option<&'static AcpiTable<'static>> {
 pub fn poweroff() {
 	let (Some(mut pm1a_cnt_blk), Some(&slp_typa)) = (PM1A_CNT_BLK.get().cloned(), SLP_TYPA.get())
 	else {
+		// Disable log output for AMD SEV because we may have panicked, at which point the console is not available safely
+		#[cfg(not(feature = "amd-sev"))]
 		warn!("ACPI Power Off is not available");
 		return;
 	};
 
 	let bits = (u16::from(slp_typa) << 10) | SLP_EN;
+	#[cfg(not(feature = "amd-sev"))]
 	debug!("Powering Off through ACPI (port {pm1a_cnt_blk:?}, bitmask {bits:#X})");
 	unsafe {
+		#[cfg(not(feature = "amd-sev"))]
 		pm1a_cnt_blk.write(bits);
+
+		#[cfg(feature = "amd-sev")]
+		EmergencyChannelManager::get_channel().with_ghcb_force(|mut ghcb| {
+			pm1a_cnt_blk.write(&mut ghcb, bits);
+		});
 	}
 }
 

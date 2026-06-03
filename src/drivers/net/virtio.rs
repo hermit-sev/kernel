@@ -847,6 +847,7 @@ impl crate::drivers::virtio::VirtioDriver for VirtioNetDriver {
 			.union(virtio::net::F::CTRL_VQ)
 			// Multiqueue support
 			.union(virtio::net::F::MQ)
+			.union(virtio::net::F::ACCESS_PLATFORM)
 			// Checksum calculation can partially be offloaded to the device
 			.union(virtio::net::F::CSUM)
 			// Partially checksummed frames can be received

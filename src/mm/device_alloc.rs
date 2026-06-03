@@ -11,6 +11,10 @@ use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::PhysFrame;
 
+#[cfg(feature = "amd-sev")]
+use ghcb::mapping::mapping_utils::make_shared_large;
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::StaticGhcbManager;
 use crate::arch::mm::paging;
 use crate::arch::mm::paging::{BasePageSize, HugePageSize, PageSize};
 #[cfg(target_arch = "x86_64")]
@@ -28,7 +32,7 @@ unsafe impl Allocator for DeviceAlloc {
 		let size = layout.size().align_up(BasePageSize::SIZE as usize);
 		let frame_layout = PageLayout::from_size(size).unwrap();
 
-		let frame_range = if const { DeviceAlloc.phys_offset().is_null() } {
+		let frame_range = if const { DeviceAlloc.phys_offset().is_null() && !cfg!(feature = "amd-sev") } {
 			FrameAlloc::allocate(frame_layout)
 		} else {
 			cfg_select! {
@@ -51,7 +55,7 @@ unsafe impl Allocator for DeviceAlloc {
 		let phys_addr = self.phys_addr_from(ptr.as_ptr());
 		let range = PageRange::from_start_len(phys_addr.as_usize(), size).unwrap();
 
-		if const { DeviceAlloc.phys_offset().is_null() } {
+		if const { DeviceAlloc.phys_offset().is_null() && !cfg!(feature = "amd-sev") } {
 			unsafe { FrameAlloc::deallocate(range) }
 		} else {
 			cfg_select! {
@@ -174,8 +178,13 @@ impl DeviceFreeList {
     unsafe fn map_claim_frame(frame: PhysFrame<DeviceAllocIncrement>) -> Result<(), AllocError> {
         let identity_mapping = VirtAddr::new(frame.start_address().as_u64());
 
-        // Remove identity mapping
-        paging::unmap::<DeviceAllocIncrement>(identity_mapping, 1);
+		#[cfg(feature = "amd-sev")]
+		unsafe {
+			make_shared_large::<StaticGhcbManager>(frame, identity_mapping.into())
+		}
+
+		// Remove identity mapping
+		paging::unmap::<DeviceAllocIncrement>(identity_mapping, 1);
 
         // Add mapping at the device offset
         let flags = PageTableEntryFlags::WRITABLE

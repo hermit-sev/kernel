@@ -102,6 +102,12 @@ fn synch_all_cores() {
 /// Entry Point of Hermit for the Boot Processor
 pub fn boot_processor_main() -> ! {
 	use crate::config::USER_STACK_SIZE;
+	// Initialize the AMD-SEV module immediately
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+	kernel::amd_sev::enable_sev();
+
+	#[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
+	kernel::sev_stub::ensure_sev_disabled();
 
 	// Initialize the kernel and hardware.
 	mm::claim_initial_heap();
