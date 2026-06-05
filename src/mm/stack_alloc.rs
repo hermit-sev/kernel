@@ -70,6 +70,11 @@ pub fn allocate_stack(requested_size: usize) -> StackAllocation {
 	let phys_addr_start = PhysAddr::new(frame_range.start() as u64);
 	let virt_addr_start = VirtAddr::new(stack_start as u64);
 
+	// Remove identity mapping, if any
+	// x86 only, other architectures don't support page splitting
+	#[cfg(target_arch = "x86_64")]
+	paging::unmap::<BasePageSize>(VirtAddr::new(phys_addr_start.as_u64()), num_pages);
+
 	// Map first page to a disabled page full of a marker, then unmap it
 	let mut flags = PageTableEntryFlags::empty();
 	flags.normal().writable().execute_disable();
@@ -125,7 +130,7 @@ pub struct StackAllocation {
 	virt_addr: VirtAddr,
 	/// Start address of allocated virtual memory region
 	phys_addr: PhysAddr,
-	/// Number of pages of this stack, including guard page
+	/// Size in bytes of this stack, including guard page
 	stack_size: usize,
 
 	/// If true, this is a weak reference to a stack that should not be freed
@@ -158,6 +163,24 @@ impl Drop for StackAllocation {
 				.lock()
 				.deallocate(virt_range)
 				.expect("failed to free stack memory");
+		}
+
+		// Re-add identity mapping, if any
+		// x86 only, other architectures don't support page splitting
+		#[cfg(target_arch = "x86_64")]
+		{
+			let mut flags = PageTableEntryFlags::empty();
+			flags.writable().execute_disable();
+
+			#[cfg(feature = "amd-sev")]
+			flags.set_encrypted(true);
+
+			paging::map::<BasePageSize>(
+				VirtAddr::new(self.phys_addr.as_u64()),
+				self.phys_addr,
+				self.stack_size / BasePageSize::SIZE as usize,
+				flags
+			);
 		}
 
 		let phys_range =
