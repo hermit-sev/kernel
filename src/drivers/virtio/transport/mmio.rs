@@ -6,7 +6,8 @@
 //! [Virtio Over MMIO]: https://docs.oasis-open.org/virtio/virtio/v1.2/cs01/virtio-v1.2-cs01.html#x1-1650002
 
 use core::mem;
-
+#[cfg(feature = "amd-sev")]
+use ghcb::protocols::mmio::MmioPtr;
 use memory_addresses::PhysAddr;
 use virtio::mmio::{
 	DeviceRegisters, DeviceRegistersVolatileFieldAccess, DeviceRegistersVolatileWideFieldAccess,
@@ -16,6 +17,8 @@ use virtio::{DeviceStatus, le32};
 use volatile::access::ReadOnly;
 use volatile::{VolatilePtr, VolatileRef};
 
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::StaticGhcbManager;
 #[cfg(feature = "virtio-console")]
 use crate::drivers::console::VirtioConsoleDriver;
 use crate::drivers::error::DriverError;
@@ -31,6 +34,7 @@ use crate::drivers::virtio::{ControlRegisters, VirtioIdExt};
 #[cfg(feature = "virtio-vsock")]
 use crate::drivers::vsock::VirtioVsockDriver;
 use crate::drivers::{InterruptHandlerMap, InterruptLine};
+use crate::mm::device_alloc::DeviceAlloc;
 
 pub struct VqCfgHandler<'a> {
 	vq_index: u16,
@@ -262,8 +266,13 @@ impl NotifCfg {
 pub struct NotifCtrl {
 	/// Indicates if VIRTIO_F_NOTIFICATION_DATA has been negotiated
 	f_notif_data: bool,
+
+	#[cfg(not(feature = "amd-sev"))]
 	/// Where to write notification
 	notif_addr: *mut le32,
+
+	#[cfg(feature = "amd-sev")]
+	notif_addr: MmioPtr<le32, StaticGhcbManager>,
 }
 
 // FIXME: make `notif_addr` implement `Send` instead
@@ -273,6 +282,9 @@ impl NotifCtrl {
 	/// Returns a new controller. By default MSI-X capabilities and VIRTIO_F_NOTIFICATION_DATA
 	/// are disabled.
 	pub fn new(notif_addr: *mut le32) -> Self {
+		#[cfg(feature = "amd-sev")]
+		let notif_addr = MmioPtr::new(DeviceAlloc.phys_addr_from(notif_addr).into());
+
 		NotifCtrl {
 			f_notif_data: false,
 			notif_addr,
@@ -303,6 +315,7 @@ impl NotifCtrl {
 ///
 /// Provides a safe API for Raw structure and allows interaction with the device via
 /// the structure.
+
 pub struct IsrStatus {
 	// FIXME: integrate into device register struct
 	raw: VolatileRef<'static, DeviceRegisters>,

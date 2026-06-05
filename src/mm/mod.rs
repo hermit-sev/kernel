@@ -66,6 +66,7 @@ use crate::arch;
 use crate::arch::mm::paging::HugePageSize;
 pub use crate::arch::mm::paging::virtual_to_physical;
 use crate::arch::mm::paging::{BasePageSize, LargePageSize, PageSize};
+use crate::mm::device_alloc::DeviceAlloc;
 
 #[cfg(target_os = "none")]
 #[global_allocator]
@@ -328,9 +329,16 @@ pub(crate) fn device_map(
 		flags.device();
 	}
 
-    let layout = PageLayout::from_size(size).unwrap();
-    let page_range = PageAlloc::allocate(layout).unwrap();
-    let virtual_address = VirtAddr::from(page_range.start());
+    let virtual_address = cfg_select! {
+		feature = "amd-sev" => {
+			VirtAddr::from_ptr(DeviceAlloc.ptr_from::<()>(physical_address))
+		}
+		_ => {{
+			let layout = PageLayout::from_size(size).unwrap();
+			let page_range = PageAlloc::allocate(layout).unwrap();
+			VirtAddr::from(page_range.start())
+		}}
+	};
 
 	// Remove existing identity mapping
 	arch::mm::paging::unmap::<BasePageSize>(identity_mapping, 1);

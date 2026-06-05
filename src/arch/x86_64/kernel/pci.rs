@@ -128,6 +128,8 @@ mod pcie {
 	use memory_addresses::{PhysAddr, VirtAddr};
 	use pci_types::{ConfigRegionAccess, PciAddress};
 
+    #[cfg(feature = "amd-sev")]
+    use crate::arch::kernel::amd_sev::StaticGhcbManager;
 	use super::{PCI_MAX_BUS_NUMBER, PciConfigRegion};
 	use crate::arch::kernel::acpi;
 	use crate::arch::mm::paging::{
@@ -218,9 +220,14 @@ mod pcie {
 			let phys_addr =
 				self.pci_config_space_address(address.bus(), address.device(), address.function())
 					+ u64::from(offset);
-			let ptr = DeviceAlloc.ptr_from::<u32>(phys_addr);
 
-			unsafe { ptr.read_volatile() }
+			let ptr = cfg_select! {
+				feature = "amd-sev" => ghcb::protocols::mmio::MmioPtr::<_, StaticGhcbManager>::new(phys_addr.into()),
+				_ => DeviceAlloc.ptr_from::<u32>(phys_addr)
+			};
+			unsafe {
+				ptr.read_volatile()
+			}
 		}
 
 		unsafe fn write(&self, address: PciAddress, offset: u16, value: u32) {
@@ -231,8 +238,11 @@ mod pcie {
 			let phys_addr =
 				self.pci_config_space_address(address.bus(), address.device(), address.function())
 					+ u64::from(offset);
-			let ptr = DeviceAlloc.ptr_from::<u32>(phys_addr);
 
+			let ptr = cfg_select! {
+				feature = "amd-sev" => ghcb::protocols::mmio::MmioPtr::<_, StaticGhcbManager>::new(phys_addr.into()),
+				_ => DeviceAlloc.ptr_from::<u32>(phys_addr)
+			};
 			unsafe {
 				ptr.write_volatile(value);
 			}

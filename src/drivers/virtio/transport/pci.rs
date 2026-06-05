@@ -8,6 +8,8 @@
 use alloc::vec::Vec;
 use core::ptr::{self, NonNull};
 
+#[cfg(feature = "amd-sev")]
+use ghcb::protocols::mmio::MmioPtr;
 use memory_addresses::PhysAddr;
 use pci_types::capability::PciCapability;
 use thiserror::Error;
@@ -19,6 +21,8 @@ use virtio::{DeviceStatus, le16, le32};
 use volatile::access::ReadOnly;
 use volatile::{VolatilePtr, VolatileRef};
 
+#[cfg(feature = "amd-sev")]
+use crate::arch::kernel::amd_sev::StaticGhcbManager;
 use crate::arch::kernel::pci::PciConfigRegion;
 use crate::drivers::InterruptHandlerMap;
 #[cfg(feature = "virtio-console")]
@@ -46,6 +50,8 @@ use crate::drivers::virtio::transport::{InterruptCapability, UniCapsColl};
 use crate::drivers::virtio::{ControlRegisters, VirtioIdExt};
 #[cfg(feature = "virtio-vsock")]
 use crate::drivers::vsock::VirtioVsockDriver;
+#[cfg(feature = "amd-sev")]
+use crate::mm::device_alloc::DeviceAlloc;
 
 /// Virtio's PCI capabilities structure.
 /// See Virtio specification v.1.1 - 4.1.4
@@ -485,8 +491,13 @@ impl NotifCfg {
 pub struct NotifCtrl {
 	/// Indicates if VIRTIO_F_NOTIFICATION_DATA has been negotiated
 	f_notif_data: bool,
+
+	#[cfg(not(feature = "amd-sev"))]
 	/// Where to write notification
 	notif_addr: *mut le32,
+
+	#[cfg(feature = "amd-sev")]
+	notif_addr: MmioPtr<le32, StaticGhcbManager>,
 }
 
 // FIXME: make `notif_addr` implement `Send` instead
@@ -496,8 +507,14 @@ impl NotifCtrl {
 	/// Returns a new controller. By default MSI-X capabilities and VIRTIO_F_NOTIFICATION_DATA
 	/// are disabled.
 	pub fn new(notif_addr: *mut le32) -> Self {
+		#[cfg(feature = "amd-sev")]
+		let notif_addr = DeviceAlloc.phys_addr_from(notif_addr);
+
 		NotifCtrl {
 			f_notif_data: false,
+			#[cfg(feature = "amd-sev")]
+			notif_addr: MmioPtr::new(notif_addr.into()),
+			#[cfg(not(feature = "amd-sev"))]
 			notif_addr,
 		}
 	}
@@ -507,6 +524,7 @@ impl NotifCtrl {
 		self.f_notif_data = true;
 	}
 
+	#[cfg(not(feature = "amd-sev"))]
 	pub fn notify_dev(&self, data: NotificationData) {
 		// See Virtio specification v.1.1. - 4.1.5.2
 		// Depending in the feature negotiation, we write either only the
@@ -524,6 +542,21 @@ impl NotifCtrl {
 			}
 		}
 	}
+
+	#[cfg(feature = "amd-sev")]
+	pub fn notify_dev(&self, data: NotificationData) {
+		// See Virtio specification v.1.1. - 4.1.5.2
+		// Depending in the feature negotiation, we write either only the
+		// virtqueue index or the index and the next position inside the queue.
+		if self.f_notif_data {
+			unsafe { self.notif_addr.write_volatile(data.into_bits()) }
+		} else {
+			unsafe {
+				let vqn: le16 = data.vqn().into();
+				self.notif_addr.write_volatile(vqn.into())
+			}
+		};
+	}
 }
 
 /// Wraps a [IsrStatusRaw] in order to preserve
@@ -532,21 +565,42 @@ impl NotifCtrl {
 ///
 /// Provides a safe API for Raw structure and allows interaction with the device via
 /// the structure.
+#[cfg(not(feature = "amd-sev"))]
 pub struct IsrStatus {
 	/// References the raw structure in PCI memory space. Is static as
 	/// long as the device is present, which is mandatory in order to let this code work.
 	isr_stat: VolatileRef<'static, IsrStatusRaw>,
 }
 
+#[cfg(feature = "amd-sev")]
+pub struct IsrStatus {
+	interrupt_status: MmioPtr<IsrStatusRaw, StaticGhcbManager>,
+}
+
 impl IsrStatus {
+	#[cfg(not(feature = "amd-sev"))]
 	fn new(raw: VolatileRef<'static, IsrStatusRaw>) -> Self {
 		IsrStatus { isr_stat: raw }
 	}
 
+	#[cfg(feature = "amd-sev")]
+	fn new(mut raw: VolatileRef<'static, IsrStatusRaw>) -> Self {
+		let ptr = raw.as_mut_ptr().as_raw_ptr().as_ptr();
+		IsrStatus {
+			interrupt_status: MmioPtr::new(DeviceAlloc.phys_addr_from(ptr).into()),
+		}
+	}
+
+	#[cfg(not(feature = "amd-sev"))]
 	pub fn acknowledge(&mut self) -> IsrStatusRaw {
 		// Driver read of ISR status causes the device to de-assert an interrupt.
 		// VIRTIO spec. v1.4 sec. 4.1.4.5
 		self.isr_stat.as_ptr().read()
+	}
+
+	#[cfg(feature = "amd-sev")]
+	pub fn acknowledge(&mut self) -> IsrStatusRaw {
+		unsafe { self.interrupt_status.read_volatile() }
 	}
 }
 
