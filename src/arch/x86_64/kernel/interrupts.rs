@@ -26,7 +26,10 @@ static IRQ_NAMES: InterruptTicketMutex<HashMap<u8, &'static str, RandomState>> =
 	InterruptTicketMutex::new(HashMap::with_hasher(RandomState::with_seeds(0, 0, 0, 0)));
 
 pub(crate) const IST_ENTRIES: usize = 4;
-pub(crate) const IST_SIZE: usize = 8 * BasePageSize::SIZE as usize;
+pub(crate) const IST_SIZE: usize = 16 * BasePageSize::SIZE as usize;
+
+#[cfg(feature = "amd-sev")]
+pub(crate) const VC_HANDLER_STACK_INDEX: usize = 3;
 
 pub(crate) static IDT: InterruptSpinMutex<InterruptDescriptorTable> =
 	InterruptSpinMutex::new(InterruptDescriptorTable::new());
@@ -157,7 +160,7 @@ pub(crate) fn install() {
 		#[cfg(feature = "amd-sev")]
 		idt.vmm_communication_exception
 			.set_handler_fn(vmm_interrupt_exception)
-			.set_stack_index(1);
+			.set_stack_index(VC_HANDLER_STACK_INDEX as u16);
 
 		idt.machine_check
 			.set_handler_fn(machine_check_exception)

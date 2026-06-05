@@ -76,7 +76,11 @@ impl TaskStacks {
 		let mut ist_stacks = [const { MaybeUninit::<StackAllocation>::uninit() }; IST_ENTRIES];
 		#[allow(clippy::needless_range_loop)]
 		for i in 0..IST_ENTRIES {
-			let size = if i == 0 {
+			let large = cfg_select! {
+				feature = "amd-sev" => { i == 0 || i == interrupts::VC_HANDLER_STACK_INDEX }
+				_ => { i == 0 }
+			};
+			let size = if large {
 				IST_SIZE
 			} else {
 				BasePageSize::SIZE as usize
