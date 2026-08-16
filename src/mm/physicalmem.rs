@@ -126,11 +126,7 @@ unsafe fn detect_from_start_info() {
 		// likely be lowered.
 		start_addr = start_addr.max(paging::LargePageSize::SIZE as usize);
 
-		#[cfg(all(target_arch = "x86_64", any(feature = "hermit-entry", feature = "linux-boot")))]
-		if paging::is_recursive() {
-			start_addr = start_addr.max(elf_symbols::executable_end().addr());
-		}
-
+		start_addr = start_addr.max(elf_symbols::executable_end().addr());
 
 		if cfg!(target_arch = "aarch64") || cfg!(target_arch = "riscv64") {
 			start_addr = start_addr.max(elf_symbols::executable_end().addr());

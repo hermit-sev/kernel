@@ -106,6 +106,9 @@
 #[cfg(all(feature = "snapshot", feature = "write-pcap-file", not(doc)))]
 compile_error!("The `snapshot` feature is incompatible with the `write-pcap-file` feature.");
 
+#[cfg(all(feature = "linux-boot", feature = "pvh", not(doc)))]
+compile_error!("The `linux-boot` feature is incompatible with the `pvh` feature.");
+
 // EXTERNAL CRATES
 #[macro_use]
 extern crate alloc;

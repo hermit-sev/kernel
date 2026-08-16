@@ -26,6 +26,7 @@ impl Module {
 	#[cfg_attr(
 		not(any(
 			feature = "linux-boot",
+			feature = "pvh",
 			feature = "hermit-entry",
 			target_arch = "aarch64",
 			target_arch = "riscv64"
