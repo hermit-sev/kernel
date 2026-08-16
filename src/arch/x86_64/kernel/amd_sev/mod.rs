@@ -1,4 +1,4 @@
-#[cfg(feature = "uhyve")]
+#[cfg(any(feature = "uhyve", feature = "linux-boot"))]
 pub(crate) mod early_vc;
 pub(crate) mod vc_handler;
 pub(crate) mod paravirt_uart;
@@ -34,6 +34,9 @@ pub fn enable_sev() {
 	if env::start_info().is_uhyve() {
 		early_vc::install_early_handler();
 	}
+
+	#[cfg(feature = "linux-boot")]
+	early_vc::install_early_handler();
 
 	// https://github.com/torvalds/linux/blob/900241a5cc15e6e0709a012051cc72d224cd6a6e/arch/x86/mm/mem_encrypt_identity.c#L566
 	// Check for SME support

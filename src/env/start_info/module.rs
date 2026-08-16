@@ -25,6 +25,7 @@ impl Module {
 	/// The physical memory must be identity-mapped and valid for creating a slice.
 	#[cfg_attr(
 		not(any(
+			feature = "linux-boot",
 			feature = "hermit-entry",
 			target_arch = "aarch64",
 			target_arch = "riscv64"

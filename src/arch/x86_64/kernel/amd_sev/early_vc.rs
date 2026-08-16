@@ -17,8 +17,6 @@ use x86_64::registers::xcontrol::XCr0;
 use x86_64::set_general_handler;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
-use crate::arch::kernel::amd_sev::StaticGhcbManager;
-
 static EARLY_IDT: InterruptSpinMutex<InterruptDescriptorTable> =
 	InterruptSpinMutex::new(InterruptDescriptorTable::new());
 
@@ -64,6 +62,12 @@ impl VcHandler for EarlyCpuidHandler {
 	}
 }
 
+#[cfg(feature = "linux-boot")]
+type EarlyGhcbManager = crate::arch::kernel::amd_sev::allocations::ghcb::EmergencyChannelManager;
+
+#[cfg(feature = "uhyve")]
+type EarlyGhcbManager = crate::arch::kernel::amd_sev::allocations::ghcb::StaticGhcbManager;
+
 fn cpuid_via_ghcb(function: u32, subleaf: u32) -> (u32, u32, u32, u32) {
 	let xcr0 = if Cr4::read().contains(Cr4Flags::OSXSAVE) {
 		XCr0::read_raw()
@@ -71,7 +75,7 @@ fn cpuid_via_ghcb(function: u32, subleaf: u32) -> (u32, u32, u32, u32) {
 		0
 	};
 
-	let result = StaticGhcbManager::get_channel().with_ghcb(|mut ghcb| {
+	let result = EarlyGhcbManager::get_channel().with_ghcb(|mut ghcb| {
 		CpuIdRequest::for_leaf(function)
 			.with_subleaf(subleaf)
 			.with_xcr0(xcr0)

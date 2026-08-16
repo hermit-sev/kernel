@@ -1,4 +1,8 @@
 cfg_select! {
+	all(feature = "linux-boot", target_arch = "x86_64") => {
+		mod linux_boot;
+		pub use self::linux_boot::*;
+	}
 	feature = "hermit-entry" => {
 		mod hermit_entry;
 		pub use self::hermit_entry::*;

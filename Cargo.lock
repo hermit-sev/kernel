@@ -1018,6 +1018,7 @@ dependencies = [
  "hermit-entry",
  "hermit-macro",
  "hermit-sync",
+ "linux-boot-params",
  "llvm-tools",
  "log",
  "mem-barrier",
@@ -1220,6 +1221,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "linux-boot-params"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c366bde75fcd966295f8849d0af792ffb38a4569e192a755ae7ba98e3f82cba0"
 
 [[package]]
 name = "linux-raw-sys"

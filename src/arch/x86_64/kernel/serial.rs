@@ -107,8 +107,31 @@ impl ReadReady for SerialDevice {
 impl Write for SerialDevice {
 	fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
 		let mut guard = UART_DEVICE.lock();
-		let n = guard.uart.write(buf)?;
-		Ok(n)
+		let uart = &mut guard.uart;
+
+		let buffers = buf.split_inclusive(|byte| matches!(byte, 8 | 0x7f | b'\n'));
+		for buff in buffers {
+			let Some(last_byte) = buff.last() else {
+				continue
+			};
+
+			match *last_byte {
+				8 | 0x7f => {
+					uart.write(&buff[..buff.len() - 1])?;
+					uart.write(&[8, b' ', 8])?;
+				}
+				// Normal Rust newlines to terminal-compatible newlines.
+				b'\n' => {
+					uart.write(&buff[..buff.len() - 1])?;
+					uart.write(&[b'\r', b'\n'])?;
+				}
+				_ => {
+					uart.write(buff)?;
+				}
+			}
+		}
+
+		Ok(buf.len())
 	}
 
 	fn flush(&mut self) -> Result<(), Self::Error> {

@@ -124,6 +124,7 @@ pub unsafe fn identity_mapped_page_table() -> OffsetPageTable<'static> {
 /// This is useful for compatibility with the Hermit loader version 0.5.6.
 // FIXME: Remove once we drop support for loader 0.5.6
 #[cfg(feature = "hermit-entry")]
+#[expect(dead_code)]
 pub fn is_recursive() -> bool {
 	use x86_64::structures::paging::PageTableIndex;
 
@@ -135,6 +136,11 @@ pub fn is_recursive() -> bool {
 	let recursive_index_phys_addr = level_4_table[recursive_index].addr().as_u64() as usize;
 
 	level_4_table_virt_addr == recursive_index_phys_addr
+}
+
+#[cfg(feature = "linux-boot")]
+pub const fn is_recursive() -> bool {
+	true
 }
 
 /// Translate a virtual memory address to a physical one.
@@ -238,6 +244,24 @@ pub fn map<S>(
 			let map = unsafe { mapper.map_to_with_table_flags(page, frame, flags, pt_flags, &mut FrameAlloc) };
 			match map {
 				Ok(mapper_flush) => mapper_flush.flush(),
+				Err(MapToError::ParentEntryHugePage) if S::SIZE == Size4KiB::SIZE => {
+					split_page(Page::<Size2MiB>::containing_address(page.start_address().into()));
+
+					let map = unsafe { mapper.map_to_with_table_flags(page, frame, flags, pt_flags, &mut FrameAlloc) };
+					match map {
+						Ok(mapper_flush) => mapper_flush.flush(),
+						Err(err) => panic!("Could not map {page:?} to {frame:?}: {err:?}"),
+					}
+				}
+				Err(MapToError::ParentEntryHugePage) if S::SIZE == Size2MiB::SIZE => {
+					split_page(Page::<Size1GiB>::containing_address(page.start_address().into()));
+
+					let map = unsafe { mapper.map_to_with_table_flags(page, frame, flags, pt_flags, &mut FrameAlloc) };
+					match map {
+						Ok(mapper_flush) => mapper_flush.flush(),
+						Err(err) => panic!("Could not map {page:?} to {frame:?}: {err:?}"),
+					}
+				}
 				Err(err) => panic!("Could not map {page:?} to {frame:?}: {err:?}"),
 			}
 		}
@@ -544,7 +568,28 @@ pub(crate) extern "x86-interrupt" fn page_fault_handler(
 	handle_page_fault(stack_frame, error_code);
 }
 
+#[cfg(feature = "linux-boot")]
+fn clean_page_table() {
+	let mut pt = unsafe { identity_mapped_page_table() };
+
+	let l4 = pt.level_4_table_mut();
+	for i in 1..512 {
+		l4[i].set_unused();
+	}
+
+	let l3 = unsafe {
+		VirtAddr::new(l4[0].addr().as_u64()).as_mut_ptr::<PageTable>()
+			.as_mut_unchecked()
+	};
+	for i in 1..512 {
+		l3[i].set_unused();
+	}
+}
+
 pub unsafe fn init() {
+	#[cfg(feature = "linux-boot")]
+	clean_page_table();
+
 	unsafe {
 		log_page_tables();
 	}

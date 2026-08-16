@@ -141,6 +141,9 @@ pub fn init() {
 		return;
 	}
 
+	#[cfg(feature = "linux-boot")]
+	return;
+
 	VGA_SCREEN.lock().init();
 }
 

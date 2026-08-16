@@ -216,6 +216,14 @@ fn finish_processor_init() {
 		#[cfg(feature = "smp")]
 		apic::init_next_processor_variables();
 	}
+
+	#[cfg(feature = "linux-boot")]
+	{
+		apic::add_local_apic_id(core_id() as u8);
+
+		#[cfg(feature = "smp")]
+		apic::init_next_processor_variables();
+	}
 }
 
 pub fn boot_next_processor() {

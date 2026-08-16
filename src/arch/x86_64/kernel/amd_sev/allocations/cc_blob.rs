@@ -15,7 +15,9 @@ use ghcb::vc_handler::handlers::handler_cpuid::CpuIdPageAccessor;
 use hermit_sync::{Lazy, RwSpinLock};
 
 use crate::env;
-use crate::env::{FdtStartInfo, StartInfo};
+use crate::env::StartInfo;
+#[cfg(feature = "uhyve")]
+use crate::env::FdtStartInfo;
 
 pub struct ConfidentialComputingBlob {
 	secrets: SNPSecrets,
@@ -69,6 +71,10 @@ impl ConfidentialComputingBlob {
 			size_of::<SNPSecretsPage>(),
 			cc_blob.secrets_page_size as usize
 		);
+		assert_eq!(
+			cc_blob.header, 0x4544_4d41, "bad CC-blob header"
+		);
+
 		let secrets = RwSpinLock::new(unsafe { cc_blob.secrets_page_pa.as_mut()? });
 
 		assert_eq!(size_of::<CPUIDPage>(), cc_blob.cpuid_page_size as usize);
@@ -112,7 +118,7 @@ type SNPCpuIdValues = &'static CPUIDPage;
 
 #[derive(Debug)]
 #[repr(C)]
-struct SNPCCBlob {
+pub struct SNPCCBlob {
 	header: u32,
 	version: u16,
 	reserved1: u16,

@@ -152,3 +152,8 @@ pub mod syscalls;
 pub mod time;
 #[cfg(feature = "uhyve")]
 mod uhyve;
+
+const _: () = {
+	#[cfg(all(feature = "linux-boot", any(feature = "pci")))]
+	panic!("Unsupported feature combination: linux-boot cannot use pci feature")
+};

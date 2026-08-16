@@ -301,7 +301,8 @@ fn detect_rsdp(start_address: PhysAddr, end_address: PhysAddr) -> Result<&'stati
 /// Returns a reference to the ACPI RSDP within the Ok() if successful or an empty Err() on failure.
 fn detect_acpi() -> Result<&'static AcpiRsdp, ()> {
 	if let Some(rsdp_addr) = env::start_info().rsdp_addr() {
-		trace!("RSDP detected successfully at {rsdp_addr:#x?}");
+		info!("RSDP detected successfully at {rsdp_addr:#x?}");
+
 		let rsdp = unsafe {
 			ptr::with_exposed_provenance::<AcpiRsdp>(rsdp_addr.get())
 				.as_ref()

@@ -111,7 +111,9 @@ pub fn boot_processor_main() -> ! {
 
 	// Initialize the kernel and hardware.
 	mm::claim_initial_heap();
+
 	hermit_sync::Lazy::force(&console::CONSOLE);
+
 	unsafe {
 		logging::init();
 	}
@@ -153,7 +155,7 @@ pub fn boot_processor_main() -> ! {
 
 	kernel::boot_next_processor();
 
-	#[cfg(feature = "smp")]
+	#[cfg(all(feature = "smp", not(feature = "linux-boot")))]
 	synch_all_cores();
 
 	#[cfg(feature = "pci")]
