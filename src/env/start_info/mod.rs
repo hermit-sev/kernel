@@ -56,8 +56,13 @@ pub unsafe trait StartInfo {
 		None
 	}
 
-	#[cfg(feature = "amd-sev")]
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
 	fn cc_blob_addr(&self) -> Option<NonZero<usize>> {
+		None
+	}
+
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev", feature = "uhyve"))]
+	fn ghcb_addr(&self) -> Option<NonZero<usize>> {
 		None
 	}
 

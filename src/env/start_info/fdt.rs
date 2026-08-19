@@ -48,7 +48,7 @@ unsafe impl<T: FdtStartInfo> StartInfo for T {
 	}
 
 	/// Returns the EFI CC Blob physical address if available.
-	#[cfg(feature = "amd-sev")]
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
 	fn cc_blob_addr(&self) -> Option<NonZero<usize>> {
 		let cc_blob = self
 			.fdt()?
@@ -58,6 +58,17 @@ unsafe impl<T: FdtStartInfo> StartInfo for T {
 			.starting_address
 			.addr();
 		NonZero::new(cc_blob)
+	}
+
+	/// Returns the GHCB physical address if available.
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+	fn ghcb_addr(&self) -> Option<NonZero<usize>> {
+		let ghcb_addr = self
+			.fdt()?
+			.find_node("/uhyve,sev")?
+			.property("ghcb")?
+			.as_usize()?;
+		NonZero::new(ghcb_addr)
 	}
 
 	fn modules(&self) -> impl Iterator<Item = Module> {

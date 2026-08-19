@@ -26,6 +26,10 @@ unsafe impl FrameAllocator<Size4KiB> for FrameAlloc {
 		let range = FrameAlloc::allocate(layout).ok()?;
 
 		let phys_addr = PhysAddr::from(range.start());
+		// New page-table frames are written (zeroed) by the mapper via their identity mapping the
+		// instant they are handed out, so they must be private and validated first.
+		#[cfg(feature = "amd-sev")]
+		crate::arch::kernel::amd_sev::validate_private_frames(phys_addr.into(), 1);
 		Some(PhysFrame::from_start_address(phys_addr.into()).unwrap())
 	}
 }
@@ -277,6 +281,11 @@ where
 		let layout = PageLayout::from_size_align(S::SIZE as usize, S::SIZE as usize).unwrap();
 		let frame_range = FrameAlloc::allocate(layout).map_err(|_| map_counter)?;
 		let phys_addr = PhysAddr::from(frame_range.start());
+		#[cfg(feature = "amd-sev")]
+		crate::arch::kernel::amd_sev::validate_private_frames(
+			phys_addr.into(),
+			(S::SIZE / Size4KiB::SIZE) as usize,
+		);
 		map::<S>(virt_addr, phys_addr, 1, flags);
 	}
 

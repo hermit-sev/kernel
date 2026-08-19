@@ -65,7 +65,20 @@ pub(crate) fn uhyve_hypercall(hypercall: Hypercall<'_>) {
 	let ptr = HypercallAddress::from(&hypercall) as u16;
 	let data = hypercall_data(&hypercall);
 
-	#[cfg(target_arch = "x86_64")]
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+	{
+		use ghcb::protocols::mmio::MmioPtr;
+		use x86_64::PhysAddr;
+
+		use crate::arch::kernel::amd_sev::StaticGhcbManager;
+
+		// SAFETY: dedicated, RAM-unbacked hypercall MMIO window decoded by the hypervisor.
+		unsafe {
+			MmioPtr::<u64, StaticGhcbManager>::new(PhysAddr::new(ptr as u64)).write_volatile(data);
+		}
+	}
+
+	#[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
 	{
 		unsafe {
 			use core::arch::asm;

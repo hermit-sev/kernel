@@ -1,3 +1,5 @@
+#[cfg(feature = "uhyve")]
+pub(crate) mod early_vc;
 pub(crate) mod vc_handler;
 pub(crate) mod paravirt_uart;
 pub(crate) mod sev_guest_ioctl;
@@ -7,12 +9,22 @@ pub mod mmap;
 
 pub use crate::arch::kernel::amd_sev::allocations::ghcb::StaticGhcbManager;
 use crate::arch::kernel::serial::early_panic;
+use crate::env;
 use allocations::cc_blob::CC_BLOB;
 use bit_field::BitField;
+use ghcb::instructions::pvalidate::pvalidate;
+use ghcb::protocols::GhcbProtocolRequest;
+use ghcb::protocols::change_page_state::{
+	ChangePageStateRequest, PageStateChangeEntry, PageStateChangeOperation, PageStateChangePageSize,
+};
 use ghcb::protocols::msr::GhcbMsr;
 use ghcb::sev_status::{SevStatusFlags, SevStatusMsr};
 use x86_64::structures::mem_encrypt::MemoryEncryptionConfiguration;
-use x86_64::structures::paging::PageTableFlags;
+use x86_64::structures::paging::{PageSize, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr};
+
+#[cfg(feature = "uhyve")]
+use crate::env::UhyveStartInfo;
 
 /// Initializes AMD Secure Encrypted Virtualization if present.
 ///
@@ -22,6 +34,11 @@ use x86_64::structures::paging::PageTableFlags;
 /// flag for memory encryption. If this is not set, page table operations may cause panics due to
 /// invalid canonical addresses.
 pub fn enable_sev() {
+	#[cfg(feature = "uhyve")]
+	if env::start_info().is_uhyve() {
+		early_vc::install_early_handler();
+	}
+
 	// https://github.com/torvalds/linux/blob/900241a5cc15e6e0709a012051cc72d224cd6a6e/arch/x86/mm/mem_encrypt_identity.c#L566
 	// Check for SME support
 	let (cpuid_max, _) = unsafe { core::arch::x86_64::__get_cpuid_max(0x8000_0000) };
@@ -49,12 +66,19 @@ pub fn enable_sev() {
 	if !sev_enabled || !snp_enabled {
 		early_panic("SEV/SEV-SNP is not enabled!\nThis kernel was compiled with the `amd-sev` feature, so it can ONLY boot on an AMD SEV-SNP VM!")
 	}
+
+	#[cfg(feature = "uhyve")]
+	if env::start_info().is_uhyve() && !allocations::ghcb::uhyve::init_early_ghcb() {
+		panic!("no ghcb in uhyve,sev FDT node");
+	}
 }
 
 /// Finish initialization of AMD SEV, once memory mapping has been setup, just after the interrupt
 /// descriptor table is set
 pub fn post_init() {
-	allocations::ghcb::init_ghcb_for_core();
+	if !env::start_info().is_uhyve() {
+		allocations::ghcb::init_ghcb_for_core();
+	}
 	hermit_sync::Lazy::force(&CC_BLOB);
 }
 
@@ -66,6 +90,30 @@ pub fn init_application_processor() {
 pub fn set_encrypted(mut flags: PageTableFlags) -> PageTableFlags {
 	flags.set_encrypted(true);
 	flags
+}
+
+/// Validates physical frames. This includes a page state change request to the hypervisor and then a PVALIDATE call to the RMP.
+pub fn validate_private_frames(phys: PhysAddr, count: usize) {
+	for i in 0..count as u64 {
+		let addr = phys.as_u64() + i * Size4KiB::SIZE;
+		// TODO: Investigate larger frame sizes
+		let frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(addr)).unwrap();
+
+		// Assign the page to the guest as private (host RMPUPDATE to guest-owned, unvalidated).
+		ChangePageStateRequest::new(&[PageStateChangeEntry::new_for_frame(
+			frame,
+			PageStateChangeOperation::PageAssignPrivate,
+		)])
+		.execute::<StaticGhcbManager>()
+		.expect("page state change to private failed");
+
+		// Set the RMP Validated bit so accesses no longer fault.
+		pvalidate(
+			PageStateChangePageSize::PageSize4KB,
+			true,
+			VirtAddr::new(addr),
+		);
+	}
 }
 
 pub type Msr = GhcbMsr<StaticGhcbManager>;

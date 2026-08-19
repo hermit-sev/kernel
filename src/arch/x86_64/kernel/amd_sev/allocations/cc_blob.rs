@@ -13,7 +13,7 @@ use core::ops::DerefMut;
 use ghcb::structures::snp_cpuid_page::CPUIDPage;
 use ghcb::structures::snp_secrets_page::{SNPSecretsPage, SecretsPageAccessor};
 use ghcb::vc_handler::handlers::handler_cpuid::CpuIdPageAccessor;
-use crate::env::StartInfo;
+use crate::env::{FdtStartInfo, StartInfo, UhyveStartInfo};
 
 pub struct ConfidentialComputingBlob {
     secrets: SNPSecrets,
@@ -22,20 +22,43 @@ pub struct ConfidentialComputingBlob {
 
 impl ConfidentialComputingBlob {
     fn new() -> Option<ConfidentialComputingBlob> {
-        let cc_blob: &SNPCCBlob = env::start_info().cc_blob_addr().and_then(|cc_blob| {
-            info!("AMD-SEV: EFI CC Blob detected at {cc_blob:#x}");
-            let p = ptr::with_exposed_provenance::<SNPCCBlob>(cc_blob.get());
-			unsafe { p.as_ref() }
-        })?;
+        let env = env::start_info();
 
-        assert_eq!(size_of::<SNPSecretsPage>(), cc_blob.secrets_page_size as usize);
-		let secrets = RwSpinLock::new(unsafe {
-            cc_blob.secrets_page_pa.as_mut()?
-        });
+		let (secrets, cpuid) = if env.is_uhyve() {
+			let secrets_page = ptr::with_exposed_provenance::<SNPSecretsPage>(
+                env.fdt()?
+					.find_node("/uhyve,sev")?
+					.property("secrets_page")?
+					.as_usize()?,
+			) as *mut SNPSecretsPage;
+			let cpuid_page = ptr::with_exposed_provenance::<CPUIDPage>(
+				env.fdt()?
+					.find_node("/uhyve,sev")?
+					.property("cpuid")?
+					.as_usize()?,
+			) as *mut CPUIDPage;
 
-        assert_eq!(size_of::<CPUIDPage>(), cc_blob.cpuid_page_size as usize);
-		let cpuid = unsafe {
-            cc_blob.cpuid_page_pa.as_mut()?
+			let secrets = RwSpinLock::new(unsafe { secrets_page.as_mut()? });
+			let cpuid = unsafe { cpuid_page.as_mut()? };
+
+			(secrets, cpuid)
+		} else {
+            let cc_blob: &SNPCCBlob = env.cc_blob_addr().and_then(|cc_blob| {
+                info!("AMD-SEV: EFI CC Blob detected at {cc_blob:#x}");
+                let p = ptr::with_exposed_provenance::<SNPCCBlob>(cc_blob.get());
+                unsafe { p.as_ref() }
+            })?;
+
+            assert_eq!(size_of::<SNPSecretsPage>(), cc_blob.secrets_page_size as usize);
+            let secrets = RwSpinLock::new(unsafe {
+                cc_blob.secrets_page_pa.as_mut()?
+            });
+
+            assert_eq!(size_of::<CPUIDPage>(), cc_blob.cpuid_page_size as usize);
+
+            let cpuid = unsafe { cc_blob.cpuid_page_pa.as_mut()? };
+
+            (secrets, cpuid)
         };
 
 		Some(Self { secrets, cpuid })

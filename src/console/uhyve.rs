@@ -1,7 +1,11 @@
 use embedded_io::{ErrorType, Read, ReadReady, Write};
+#[cfg(feature = "amd-sev")]
+use uhyve_interface::v2::Hypercall;
 
 use crate::errno::Errno;
 use crate::uhyve::serial_buf_hypercall;
+#[cfg(feature = "amd-sev")]
+use crate::uhyve::uhyve_hypercall;
 
 pub(crate) struct UhyveSerial;
 
@@ -30,6 +34,12 @@ impl ReadReady for UhyveSerial {
 
 impl Write for UhyveSerial {
 	fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+		// TODO: Implement serial_buf_hypercall on SEV
+		#[cfg(feature = "amd-sev")]
+		for &byte in buf {
+			uhyve_hypercall(Hypercall::SerialWriteByte(byte));
+		}
+		#[cfg(not(feature = "amd-sev"))]
 		serial_buf_hypercall(buf);
 		Ok(buf.len())
 	}
