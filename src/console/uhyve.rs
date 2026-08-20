@@ -34,12 +34,6 @@ impl ReadReady for UhyveSerial {
 
 impl Write for UhyveSerial {
 	fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-		// TODO: Implement serial_buf_hypercall on SEV
-		#[cfg(feature = "amd-sev")]
-		for &byte in buf {
-			uhyve_hypercall(Hypercall::SerialWriteByte(byte));
-		}
-		#[cfg(not(feature = "amd-sev"))]
 		serial_buf_hypercall(buf);
 		Ok(buf.len())
 	}
