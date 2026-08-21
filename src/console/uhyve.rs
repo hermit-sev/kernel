@@ -1,10 +1,13 @@
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
+use core::fmt;
+
 use embedded_io::{ErrorType, Read, ReadReady, Write};
-#[cfg(feature = "amd-sev")]
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
 use uhyve_interface::v2::Hypercall;
 
 use crate::errno::Errno;
 use crate::uhyve::serial_buf_hypercall;
-#[cfg(feature = "amd-sev")]
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
 use crate::uhyve::uhyve_hypercall;
 
 pub(crate) struct UhyveSerial;
@@ -41,4 +44,23 @@ impl Write for UhyveSerial {
 	fn flush(&mut self) -> Result<(), Self::Error> {
 		Ok(())
 	}
+}
+
+/// Panic output for uhyve.
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
+struct PanicWriter;
+
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
+impl fmt::Write for PanicWriter {
+	fn write_str(&mut self, s: &str) -> fmt::Result {
+		for &byte in s.as_bytes() {
+			uhyve_hypercall(Hypercall::SerialWriteByte(byte));
+		}
+		Ok(())
+	}
+}
+
+#[cfg(all(feature = "amd-sev", feature = "uhyve"))]
+pub(crate) fn panic_print(args: fmt::Arguments<'_>) {
+	let _ = fmt::Write::write_fmt(&mut PanicWriter, args);
 }

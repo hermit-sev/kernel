@@ -12,6 +12,7 @@ use hermit_sync::{InterruptTicketMutex, Lazy};
 use crate::arch::kernel::serial::SerialDevice;
 #[cfg(feature = "virtio-console")]
 use crate::drivers::console::VirtioConsoleDriver;
+use crate::env::UhyveStartInfo;
 use crate::errno::Errno;
 use crate::executor::WakerRegistration;
 
@@ -186,7 +187,13 @@ pub fn _panic_print(args: fmt::Arguments<'_>) {
 #[doc(hidden)]
 #[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
 pub fn _panic_print(args: fmt::Arguments<'_>) {
-	let console = crate::arch::kernel::serial::get_panic_port();
+	#[cfg(feature = "uhyve")]
+	if crate::env::start_info().is_uhyve() {
+		uhyve::panic_print(args);
+		return;
+	}
+
+    let console = crate::arch::kernel::serial::get_panic_port();
 	unsafe {
 		let mut console = console.make_guard_unchecked();
 		let _ = console.write_fmt(args);
