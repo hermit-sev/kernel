@@ -720,7 +720,7 @@ pub(crate) fn map_caps(
 				}
 			}
 			// We can currently only make use of MSI-X on x86_64.
-			#[cfg(target_arch = "x86_64")]
+			#[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
 			PciCapability::MsiX(mut msix_capability) => {
 				msix_capability.set_enabled(true, device.access());
 
@@ -757,7 +757,7 @@ pub(crate) fn map_caps(
 		Some(InterruptCapability::IsrStatus(_)) => {
 			info!("The device will use legacy interrupts.");
 		}
-		#[cfg(target_arch = "x86_64")]
+		#[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
 		Some(InterruptCapability::Msix(_)) => {
 			info!("Found MSI-X capability. The device will use message signaled interrupts.");
 		}
