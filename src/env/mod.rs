@@ -10,18 +10,20 @@ use alloc::vec::Vec;
 
 use ahash::RandomState;
 use hashbrown::HashMap;
-use hashbrown::hash_map::Iter;
-use hermit_sync::OnceCell;
+use hermit_sync::InterruptSpinMutex;
 use shlex::Shlex;
 
 #[cfg(feature = "net")]
 pub use self::ip_config::*;
 pub use self::start_info::*;
 
-static CLI: OnceCell<Cli> = OnceCell::new();
+static CLI: InterruptSpinMutex<Option<Cli>> = InterruptSpinMutex::new(None);
 
 pub fn init() {
-	CLI.set(Cli::default()).unwrap();
+	assert!(
+		CLI.lock().replace(Cli::default()).is_none(),
+		"env::init must only be called once"
+	);
 }
 
 #[derive(Debug)]
@@ -155,48 +157,57 @@ impl Default for Cli {
 /// CPU Frequency in MHz if given through the -freq command-line parameter.
 #[cfg(not(target_arch = "riscv64"))]
 pub fn freq() -> Option<u16> {
-	CLI.get().unwrap().freq
+	CLI.lock().as_ref().unwrap().freq
 }
 
 #[allow(dead_code)]
-pub fn var(key: &str) -> Option<&String> {
-	CLI.get().unwrap().env_vars.get(key)
+pub fn var(key: &str) -> Option<String> {
+	CLI.lock().as_ref().unwrap().env_vars.get(key).cloned()
+}
+
+#[cfg(feature = "snapshot")]
+pub fn insert_var(key: &str, value: String) {
+	CLI.lock()
+		.as_mut()
+		.unwrap()
+		.env_vars
+		.insert(key.to_owned(), value);
 }
 
 #[allow(dead_code)]
 pub fn early_var(key: &str) -> Option<String> {
-	match CLI.get() {
-		Some(cli) => cli.env_vars.get(key).cloned(),
-		None => {
-			let prefix = format!("env={key}=");
-			for i in Shlex::new(start_info().bootargs().unwrap_or_default()) {
-				let i = i.as_str();
-				if let Some(value) = i.strip_prefix(&prefix) {
-					return Some(value.to_owned());
-				}
-			}
-			None
-		}
-	}
+    match CLI.lock().as_ref() {
+        Some(cli) => cli.env_vars.get(key).cloned(),
+        None => {
+            let prefix = format!("env={key}=");
+            for i in Shlex::new(start_info().bootargs().unwrap_or_default()) {
+                let i = i.as_str();
+                if let Some(value) = i.strip_prefix(&prefix) {
+                    return Some(value.to_owned());
+                }
+            }
+            None
+        }
+    }
 }
 
 /// Returns all interface IP configurations specified via ip=.
 #[cfg(feature = "net")]
-pub fn interface_configs() -> &'static [IpConfig] {
-	CLI.get().unwrap().interface_configs.as_slice()
+pub fn interface_configs() -> Vec<IpConfig> {
+	CLI.lock().as_ref().unwrap().interface_configs.clone()
 }
 
-pub fn vars() -> Iter<'static, Cow<'static, str>, String> {
-	CLI.get().unwrap().env_vars.iter()
+pub fn vars() -> HashMap<Cow<'static, str>, String, RandomState> {
+	CLI.lock().as_ref().unwrap().env_vars.clone()
 }
 
 /// Returns the cmdline argument passed in after "--"
-pub fn args() -> &'static [String] {
-	CLI.get().unwrap().args.as_slice()
+pub fn args() -> Vec<String> {
+	CLI.lock().as_ref().unwrap().args.clone()
 }
 
 /// Returns the configuration of all mmio devices
 #[allow(dead_code)]
-pub fn mmio() -> &'static [String] {
-	CLI.get().unwrap().mmio.as_slice()
+pub fn mmio() -> Vec<String> {
+	CLI.lock().as_ref().unwrap().mmio.clone()
 }

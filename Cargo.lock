@@ -262,9 +262,9 @@ checksum = "1e4b40c7323adcfc0a41c4b88143ed58346ff65a288fc144329c5c45e05d70c6"
 
 [[package]]
 name = "bitfield-struct"
-version = "0.13.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
+checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -273,9 +273,9 @@ dependencies = [
 
 [[package]]
 name = "bitfield-struct"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
+checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "hermit-kernel"
-version = "0.13.0"
+version = "0.13.2"
 dependencies = [
  "aarch64-cpu 11.2.0",
  "ahash",
@@ -1931,8 +1931,7 @@ dependencies = [
 [[package]]
 name = "uhyve-interface"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce486c1c8e5506851de5f819968b80b22fce3cf1246c3a75bf52439448ba9d51"
+source = "git+https://github.com/hermit-os/uhyve.git?branch=uhyve-if-snapshot#86bfff8613a4f1cf308bfebcf613dbe5411dc93d"
 dependencies = [
  "aarch64",
  "hermit-abi",
@@ -2012,7 +2011,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cee4b676e73dca3ae00fa8715a41a86b89db02b412a97ab2e39ba25d76d739e"
 dependencies = [
  "allocator-api2",
- "bitfield-struct 0.11.0",
+ "bitfield-struct 0.13.0",
  "bitflags 2.13.1",
  "endian-num",
  "num_enum",

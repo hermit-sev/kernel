@@ -130,7 +130,7 @@ fn detect_device(phys_addr: usize) -> Option<VolatileRef<'static, DeviceRegister
 }
 
 fn check_linux_args(
-	linux_mmio: &'static [String],
+	linux_mmio: &[String],
 ) -> impl Iterator<Item = (VolatileRef<'static, DeviceRegisters>, u8)> {
 	linux_mmio
 		.iter()
@@ -239,7 +239,7 @@ pub(crate) fn init_drivers(handlers: &mut InterruptHandlerMap) {
 				register_mmio(mmio, irq, handlers);
 			}
 		} else {
-			for (mmio, irq) in check_linux_args(linux_mmio) {
+			for (mmio, irq) in check_linux_args(linux_mmio.as_slice()) {
 				register_mmio(mmio, irq, handlers);
 			}
 		}
