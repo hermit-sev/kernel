@@ -83,6 +83,7 @@ pub fn post_init() {
 	hermit_sync::Lazy::force(&CC_BLOB);
 }
 
+#[cfg(feature = "smp")]
 pub fn init_application_processor() {
 	allocations::ghcb::init_ghcb_for_core();
 }

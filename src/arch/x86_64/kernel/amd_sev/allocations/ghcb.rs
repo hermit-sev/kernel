@@ -114,6 +114,7 @@ impl ChannelManager for EmergencyChannelManager {
 
 const GHCB_PROTOCOL_VERSION: u16 = 2;
 
+#[cfg(any(feature = "smp", feature = "uhyve"))]
 pub fn init_ghcb_for_core() {
 	let core = CoreLocal::get();
 	if core.ghcb.get().is_some() {
