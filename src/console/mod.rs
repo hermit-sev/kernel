@@ -12,6 +12,7 @@ use hermit_sync::{InterruptTicketMutex, Lazy};
 use crate::arch::kernel::serial::SerialDevice;
 #[cfg(feature = "virtio-console")]
 use crate::drivers::console::VirtioConsoleDriver;
+#[cfg(feature = "uhyve")]
 use crate::env::UhyveStartInfo;
 use crate::errno::Errno;
 use crate::executor::WakerRegistration;
