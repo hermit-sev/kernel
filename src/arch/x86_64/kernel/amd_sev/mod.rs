@@ -76,6 +76,7 @@ pub fn enable_sev() {
 /// Finish initialization of AMD SEV, once memory mapping has been setup, just after the interrupt
 /// descriptor table is set
 pub fn post_init() {
+	#[cfg(feature = "uhyve")]
 	if !env::start_info().is_uhyve() {
 		allocations::ghcb::init_ghcb_for_core();
 	}
