@@ -61,7 +61,7 @@ unsafe impl<T: FdtStartInfo> StartInfo for T {
 	}
 
 	/// Returns the GHCB physical address if available.
-	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
+	#[cfg(all(target_arch = "x86_64", feature = "amd-sev", feature = "uhyve"))]
 	fn ghcb_addr(&self) -> Option<NonZero<usize>> {
 		let ghcb_addr = self
 			.fdt()?
