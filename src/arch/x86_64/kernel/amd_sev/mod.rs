@@ -96,26 +96,48 @@ pub fn set_encrypted(mut flags: PageTableFlags) -> PageTableFlags {
 
 /// Validates physical frames. This includes a page state change request to the hypervisor and then a PVALIDATE call to the RMP.
 pub fn validate_private_frames(phys: PhysAddr, count: usize) {
-	for i in 0..count as u64 {
-		let addr = phys.as_u64() + i * Size4KiB::SIZE;
-		// TODO: Investigate larger frame sizes
-		let frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(addr)).unwrap();
+	/// Number of entries per page state change request.
+	///
+	/// The GHCB shared buffer holds 253 entries, but [`ChangePageStateRequest`] writes the entry
+	/// *count* into the header's `end_entry`, which is an entry *index*. A request with the full
+	/// 253 entries therefore gets rejected by the hypervisor as an invalid header.
+	const MAX_PSC_ENTRIES: usize = 252;
 
-		// Assign the page to the guest as private (host RMPUPDATE to guest-owned, unvalidated).
-		ChangePageStateRequest::new(&[PageStateChangeEntry::new_for_frame(
-			frame,
-			PageStateChangeOperation::PageAssignPrivate,
-		)])
-		.execute::<StaticGhcbManager>()
-		.expect("page state change to private failed");
+	// TODO: Investigate larger frame sizes
+	let mut entries = [const { PageStateChangeEntry::new() }; MAX_PSC_ENTRIES];
 
-		// Set the RMP Validated bit so accesses no longer fault.
-		pvalidate(
-			PageStateChangePageSize::PageSize4KB,
-			true,
-			VirtAddr::new(addr),
-		);
+	println!("count {count}");
+	let start_time = crate::executor::network::now();
+	for batch_start in (0..count).step_by(MAX_PSC_ENTRIES) {
+		println!("batch validate {batch_start}");
+		let batch_len = usize::min(MAX_PSC_ENTRIES, count - batch_start);
+		let batch_addr = phys.as_u64() + batch_start as u64 * Size4KiB::SIZE;
+
+		let addrs = (0..batch_len as u64).map(|i| batch_addr + i * Size4KiB::SIZE);
+
+		for (entry, addr) in entries.iter_mut().zip(addrs.clone()) {
+			let frame = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(addr)).unwrap();
+			*entry = PageStateChangeEntry::new_for_frame(
+				frame,
+				PageStateChangeOperation::PageAssignPrivate,
+			);
+		}
+
+		ChangePageStateRequest::new(&entries[..batch_len])
+			.execute::<StaticGhcbManager>()
+			.expect("page state change to private failed");
+
+		for addr in addrs {
+			pvalidate(
+				PageStateChangePageSize::PageSize4KB,
+				true,
+				VirtAddr::new(addr),
+			);
+		}
 	}
+	// let duration = start_time.elapsed();
+	let duration = crate::executor::network::now() - start_time;
+	println!("... took: {}.{:03}_{:03}s", duration.secs(), duration.millis(), duration.micros());
 }
 
 pub type Msr = GhcbMsr<StaticGhcbManager>;
