@@ -17,11 +17,11 @@ make_vc_handler!(vmm_interrupt_exception;
         &(unsafe { identity_mapped_page_table() })
     );
     pre_handling (stack_frame, _exit_code) {
-        log::debug!("VC# HANDLE: {stack_frame:#?}");
+        log::trace!("VC# HANDLE: {stack_frame:#?}");
         increment_irq_counter(29);
     };
     post_handling (stack_frame, _exit_code) {
-        log::debug!("VC# handle done - return address: {:#?}", stack_frame.exception.instruction_pointer);
+        log::trace!("VC# handle done - return address: {:#?}", stack_frame.exception.instruction_pointer);
     }
 );
 
