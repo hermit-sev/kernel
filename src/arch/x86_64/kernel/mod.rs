@@ -127,8 +127,14 @@ unsafe fn clone_relocate_stack(
 /// Real Boot Processor initialization as soon as we have put the first Welcome message on the screen.
 #[cfg(target_os = "none")]
 pub fn boot_processor_init() {
+	if is_uhyve() {
+		processor::detect_frequency();
+		crate::logging::KERNEL_LOGGER.set_time(true);
+	}
+
 	#[cfg(feature = "amd-sev")]
 	info!("Compiled with SEV feature, and SEV is enabled");
+	systemtime::init();
 
 	processor::detect_features();
 	processor::configure();
@@ -157,7 +163,6 @@ pub fn boot_processor_init() {
 	processor::print_information();
 	debug!("Cr0 = {:?}", Cr0::read());
 	debug!("Cr4 = {:?}", Cr4::read());
-	systemtime::init();
 	crate::logging::KERNEL_LOGGER.set_time(true);
 
 	#[cfg(feature = "acpi")]
