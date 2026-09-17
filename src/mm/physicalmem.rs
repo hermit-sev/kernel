@@ -26,17 +26,20 @@ impl PageRangeAllocator for FrameAlloc {
 	}
 
 	fn allocate(layout: PageLayout) -> Result<PageRange, AllocError> {
-		PHYSICAL_FREE_LIST
-			.lock()
-			.allocate(layout)
-			.map_err(|_| AllocError)
+		let range = Self::allocate_unvalidated(layout)?;
+		#[cfg(feature = "amd-sev")]
+		validate(range);
+		Ok(range)
 	}
 
 	fn allocate_at(range: PageRange) -> Result<(), AllocError> {
 		PHYSICAL_FREE_LIST
 			.lock()
 			.allocate_at(range)
-			.map_err(|_| AllocError)
+			.map_err(|_| AllocError)?;
+		#[cfg(feature = "amd-sev")]
+		validate(range);
+		Ok(())
 	}
 
 	unsafe fn deallocate(range: PageRange) {
@@ -45,12 +48,30 @@ impl PageRangeAllocator for FrameAlloc {
 		}
 	}
 }
-
+impl FrameAlloc {
+	/// Like [`PageRangeAllocator::allocate`], but with AMD SEV-SNP, the frames might still be
+	/// shared and unvalidated.
+	pub fn allocate_unvalidated(layout: PageLayout) -> Result<PageRange, AllocError> {
+		PHYSICAL_FREE_LIST
+			.lock()
+			.allocate(layout)
+			.map_err(|_| AllocError)
+	}
+}
 impl fmt::Display for FrameAlloc {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let free_list = PHYSICAL_FREE_LIST.lock();
 		write!(f, "FrameAlloc free list:\n{free_list}")
 	}
+}
+
+#[cfg(feature = "amd-sev")]
+fn validate(range: PageRange) {
+	use memory_addresses::PhysAddr;
+
+	crate::arch::kernel::amd_sev::validate_memory(
+		PhysAddr::from(range.start()).into()..PhysAddr::from(range.end()).into(),
+	);
 }
 
 pub type FrameBox = PageRangeBox<FrameAlloc>;

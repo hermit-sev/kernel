@@ -41,6 +41,8 @@
 //! ```
 
 pub(crate) mod device_alloc;
+#[cfg(feature = "amd-sev")]
+mod lazy_heap;
 mod page_range_alloc;
 mod physicalmem;
 pub mod stack_alloc;
@@ -55,7 +57,7 @@ use hermit_sync::RawInterruptTicketMutex;
 pub use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(target_os = "none")]
 use talc::TalcLock;
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", not(feature = "amd-sev")))]
 use talc::source::Manual;
 
 pub use self::page_range_alloc::{PageRangeAllocator, PageRangeBox};
@@ -68,9 +70,14 @@ pub use crate::arch::mm::paging::virtual_to_physical;
 use crate::arch::mm::paging::{BasePageSize, LargePageSize, PageSize};
 use crate::mm::device_alloc::DeviceAlloc;
 
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", not(feature = "amd-sev")))]
 #[global_allocator]
 pub(crate) static ALLOCATOR: TalcLock<RawInterruptTicketMutex, Manual> = TalcLock::new(Manual);
+
+#[cfg(feature = "amd-sev")]
+#[global_allocator]
+pub(crate) static ALLOCATOR: TalcLock<RawInterruptTicketMutex, lazy_heap::LazyHeapSource> =
+	TalcLock::new(lazy_heap::LazyHeapSource::new());
 
 #[cfg(target_os = "none")]
 pub(crate) fn claim_initial_heap() {
@@ -92,6 +99,7 @@ pub(crate) fn claim_initial_heap() {
 }
 
 #[cfg(target_os = "none")]
+#[cfg_attr(feature = "amd-sev", expect(unreachable_code, unused_assignments, unused_variables))]
 pub(crate) fn init() {
 	use crate::arch::mm::paging;
 
@@ -215,6 +223,10 @@ pub(crate) fn init() {
 			virt_size >> 20,
 			virt_addr
 		);
+
+		// with a lazy mapping, we don't map the remainder of the heap here, but map it on demand
+		#[cfg(feature = "amd-sev")]
+		return lazy_heap::init(virt_addr, virt_size);
 
 		#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 		if has_1gib_pages && virt_size > HugePageSize::SIZE as usize {

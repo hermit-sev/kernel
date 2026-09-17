@@ -70,12 +70,6 @@ pub fn allocate_stack(requested_size: usize) -> StackAllocation {
 	let phys_addr_start = PhysAddr::new(frame_range.start() as u64);
 	let virt_addr_start = VirtAddr::new(stack_start as u64);
 
-	// The guard marker and the stack clearing below write to these frames, so they must be private
-	// and validated first. This has to happen while the identity mapping is still in place, since
-	// `PVALIDATE` runs on the identity address.
-	#[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
-	crate::arch::kernel::amd_sev::validate_private_frames(phys_addr_start.into(), pages_with_guard);
-
 	// Remove identity mapping, if any
 	// x86 only, other architectures don't support page splitting
 	#[cfg(target_arch = "x86_64")]

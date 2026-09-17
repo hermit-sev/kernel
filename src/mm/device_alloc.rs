@@ -11,10 +11,6 @@ use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::PhysFrame;
 
-#[cfg(feature = "amd-sev")]
-use ghcb::mapping::mapping_utils::make_shared_large;
-#[cfg(feature = "amd-sev")]
-use crate::arch::kernel::amd_sev::StaticGhcbManager;
 use crate::arch::mm::paging;
 use crate::arch::mm::paging::{BasePageSize, HugePageSize, PageSize};
 #[cfg(target_arch = "x86_64")]
@@ -131,7 +127,7 @@ impl DeviceFreeList {
                 )
                     .unwrap();
 
-                let frames = FrameAlloc::allocate(aligned_layout)?;
+                let frames = FrameAlloc::allocate_unvalidated(aligned_layout)?;
                 let start = x86_64::PhysAddr::new(u64::try_from(frames.start()).unwrap());
                 let start = PhysFrame::<DeviceAllocIncrement>::from_start_address(start).unwrap();
                 let end = x86_64::PhysAddr::new(u64::try_from(frames.end()).unwrap());
@@ -179,8 +175,11 @@ impl DeviceFreeList {
         let identity_mapping = VirtAddr::new(frame.start_address().as_u64());
 
 		#[cfg(feature = "amd-sev")]
-		unsafe {
-			make_shared_large::<StaticGhcbManager>(frame, identity_mapping.into())
+		{
+			const { assert!(DeviceAllocIncrement::SIZE % x86_64::structures::paging::Size2MiB::SIZE == 0) }
+			unsafe {
+				crate::arch::kernel::amd_sev::make_shared_large(frame);
+			}
 		}
 
 		// Remove identity mapping
