@@ -9,9 +9,6 @@ use crate::arch::kernel::amd_sev::mmap::SevAllocator;
 use crate::arch::kernel::amd_sev::sev_request_exit;
 use crate::arch::kernel::core_local::CoreLocal;
 
-#[cfg(feature = "uhyve")]
-use crate::env::UhyveStartInfo;
-
 static EFI_GHCB: Lazy<GhcbChannel> =
 	Lazy::new(|| unsafe { GhcbChannel::identity_mapped().unwrap() });
 
@@ -25,10 +22,9 @@ pub mod uhyve {
 	use ghcb::structures::ghcb_page::GhcbPage;
 	use hermit_sync::OnceCell;
 	use x86_64::PhysAddr;
-	use x86_64::structures::paging::{PageSize, PhysFrame, Size4KiB};
+	use x86_64::structures::paging::{PhysFrame, Size4KiB};
 	use crate::env::StartInfo;
 	use super::GHCB_PROTOCOL_VERSION;
-	use crate::scheduler::CoreId;
 
 	/// The boot processor's GHCB. Brought up before core-local storage exists, and kept as core 0's
 	/// GHCB from then on.
@@ -41,7 +37,7 @@ pub mod uhyve {
 	/// Returns `true` if a GHCB was registered.
 	pub fn init_early_ghcb() -> bool {
 		// SAFETY: nothing has registered a GHCB yet.
-		let Some(channel) = (unsafe { register_core_local_ghcb(0) }) else {
+		let Some(channel) = (unsafe { register_fdt_ghcb() }) else {
 			return false;
 		};
 
@@ -52,11 +48,9 @@ pub mod uhyve {
 		true
 	}
 
-	/// Registers the 4 KiB GHCB page uhyve reserved for core `core_id`. Allocates nothing, so it
-	/// works on a core that has no GHCB yet. uhyve provides the page unencrypted and identity
-	/// mapped, so neither the C-bit nor the page state need touching.
-	pub(super) unsafe fn register_core_local_ghcb(core_id: CoreId) -> Option<GhcbChannel> {
-		let gpa = crate::env::start_info().ghcb_addr()?.get() as u64 + core_id as u64 * Size4KiB::SIZE;
+	/// Registers the 4 KiB GHCB page uhyve reserved for the boot processor.
+	unsafe fn register_fdt_ghcb() -> Option<GhcbChannel> {
+		let gpa = crate::env::start_info().ghcb_addr()?.get() as u64;
 		let phys = PhysAddr::new(gpa);
 		let frame =
 			PhysFrame::<Size4KiB>::from_start_address(phys).expect("GHCB GPA must be page-aligned");
@@ -98,13 +92,13 @@ impl ChannelManager for StaticGhcbManager {
 	}
 }
 
-/// A channel manager that will always return the EFI GHCB, no matter the core used.
+/// A channel manager that will always return the boot processor's GHCB, no matter the core used.
 /// This should only be used in a panicking context
 pub struct EmergencyChannelManager;
 
 impl ChannelManager for EmergencyChannelManager {
 	fn get_channel() -> &'static GhcbChannel {
-		let ghcb = EFI_GHCB.deref();
+		let ghcb = boot_processor_ghcb();
 		unsafe {
 			let _ = GhcbMsr::register_and_set_ghcb(ghcb.phys_frame());
 		}
@@ -114,27 +108,15 @@ impl ChannelManager for EmergencyChannelManager {
 
 const GHCB_PROTOCOL_VERSION: u16 = 2;
 
+/// Allocates and registers the GHCB of the current core.
 #[cfg(any(feature = "smp", feature = "uhyve"))]
 pub fn init_ghcb_for_core() {
-	let core = CoreLocal::get();
-	if core.ghcb.get().is_some() {
-		panic!("GHCB is already initialized!");
-	}
+	// SAFETY: the GHCB used while booting this core is not used anymore once the core-local one is set
+	let channel = unsafe { GhcbChannel::allocate_register::<SevAllocator>(GHCB_PROTOCOL_VERSION) };
 
-	// SAFETY: the interrupt handler is not yet set, and we immediately set the core GHCB
-	let channel = unsafe {
-		// Allocating one would need a GHCB itself, to validate the frame it is allocated from.
-		#[cfg(feature = "uhyve")]
-		if crate::env::start_info().is_uhyve() {
-			uhyve::register_core_local_ghcb(core.core_id).expect("no ghcb in uhyve,sev FDT node")
-		} else {
-			GhcbChannel::allocate_register::<SevAllocator>(GHCB_PROTOCOL_VERSION)
-		}
-		#[cfg(not(feature = "uhyve"))]
-		GhcbChannel::allocate_register::<SevAllocator>(GHCB_PROTOCOL_VERSION)
-	};
+	let core = CoreLocal::get();
 	if core.ghcb.set(channel).is_err() {
-		unreachable!("Race condition: GHCB is already initialized! (was not a few lines ago!)");
+		panic!("GHCB is already initialized!");
 	}
 
 	info!("GHCB for core: {:?}", core.ghcb.get().expect("no GHCB set"));

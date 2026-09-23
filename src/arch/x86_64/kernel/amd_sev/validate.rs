@@ -2,6 +2,8 @@ use core::ops::Range;
 
 use ghcb::instructions::pvalidate::pvalidate;
 use ghcb::mapping::mapping_utils;
+use ghcb::msr::GhcbMsr;
+use ghcb::msr::page_state_change::{PageStateChangeRequest, PageStateOperation};
 use ghcb::protocols::GhcbProtocolRequest;
 use ghcb::protocols::change_page_state::{
 	ChangePageStateError, ChangePageStateRequest, PageStateChangeEntry, PageStateChangeOperation,
@@ -9,7 +11,7 @@ use ghcb::protocols::change_page_state::{
 };
 use hermit_sync::InterruptTicketMutex;
 use x86_64::structures::paging::frame::PhysFrameRangeInclusive;
-use x86_64::structures::paging::{PageSize, PhysFrame, Size2MiB};
+use x86_64::structures::paging::{PageSize, PhysFrame, Size2MiB, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::StaticGhcbManager;
@@ -121,12 +123,46 @@ impl ValidatedFrames {
 }
 
 fn change_page_state(entries: &[PageStateChangeEntry]) {
+	if GhcbMsr::get_current_ghcb_address().is_none() {
+		change_page_state_via_msr(entries);
+		return;
+	}
+
 	loop {
 		match ChangePageStateRequest::new(entries).execute::<StaticGhcbManager>() {
 			Ok(()) => return,
 			// The ghcb crate only retries interruptions after progress was made.
 			Err(ChangePageStateError::Interrupted(0)) => {}
 			Err(err) => panic!("page state change failed: {err:?}"),
+		}
+	}
+}
+
+/// Changes the page state without a GHCB.
+///
+/// Usefull, if no GHCB is registered yet.
+fn change_page_state_via_msr(entries: &[PageStateChangeEntry]) {
+	for entry in entries {
+		let operation = || match entry.page_operation() {
+			PageStateChangeOperation::PageAssignPrivate => PageStateOperation::AssignPrivate,
+			PageStateChangeOperation::PageAssignShared => PageStateOperation::AssignShared,
+			operation => panic!("{operation:?} is not supported without a GHCB"),
+		};
+		let pages = match entry.page_size() {
+			PageStateChangePageSize::PageSize4KB => 1,
+			PageStateChangePageSize::PageSize2MB => Size2MiB::SIZE / Size4KiB::SIZE,
+		};
+
+		let start = PhysFrame::<Size4KiB>::from_start_address(entry.physical_address()).unwrap();
+		for frame in PhysFrame::range(start, start + pages) {
+			// SAFETY: the MSR protocol needs no GHCB, and we only ever run it on our own frames
+			let response =
+				unsafe { GhcbMsr::execute(PageStateChangeRequest::create(frame, operation())) };
+			assert!(
+				response.is_successful(),
+				"page state change failed: {:?}",
+				response.0
+			);
 		}
 	}
 }
