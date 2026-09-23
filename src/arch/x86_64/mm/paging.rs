@@ -283,7 +283,11 @@ where
 	Ok(())
 }
 
-pub fn identity_map<S>(phys_addr: PhysAddr)
+/// Identity map some memory which should only be used by Hermit (not shared with the host).
+///
+/// This is equivalent to `identity_map_shared` when AMD SEV support is not enabled.
+#[cfg(feature = "amd-sev")]
+pub fn identity_map_private<S>(phys_addr: PhysAddr)
 where
 	S: PageSize + fmt::Debug,
 	for<'a> OffsetPageTable<'a>: Mapper<S>
@@ -299,18 +303,24 @@ where
 	identity_map_with_flags::<S>(phys_addr, flags)
 }
 
-/// Identity-maps device memory without encryption.
-pub fn identity_map_device<S>(phys_addr: PhysAddr)
+/// Identity map some memory which can be shared with the host.
+///
+/// On AMD SEV, such memory remains shared.
+pub fn identity_map_shared<S>(phys_addr: PhysAddr)
 where
-	S: PageSize + fmt::Debug,
-	for<'a> OffsetPageTable<'a>: Mapper<S>,
+    S: PageSize + fmt::Debug,
+    for<'a> OffsetPageTable<'a>: Mapper<S>,
 {
-	let flags = PageTableEntryFlags::PRESENT
-		| PageTableEntryFlags::WRITABLE
-		| PageTableEntryFlags::NO_EXECUTE;
+    let flags = PageTableEntryFlags::PRESENT
+        | PageTableEntryFlags::WRITABLE
+        | PageTableEntryFlags::NO_EXECUTE;
 
-	identity_map_with_flags::<S>(phys_addr, flags)
+    identity_map_with_flags::<S>(phys_addr, flags)
 }
+
+#[cfg(not(feature = "amd-sev"))]
+pub use identity_map_shared as identity_map_private;
+use crate::arch::mm::paging;
 
 pub fn identity_map_with_flags<S>(phys_addr: PhysAddr, flags: PageTableEntryFlags)
 where

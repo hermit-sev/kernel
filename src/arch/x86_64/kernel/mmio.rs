@@ -113,7 +113,7 @@ unsafe fn check_ptr(ptr: *mut u8) -> Option<VolatileRef<'static, DeviceRegisters
 fn detect_device(phys_addr: usize) -> Option<VolatileRef<'static, DeviceRegisters>> {
 	trace!("Trying to detect MMIO device at {phys_addr:#x}...");
 
-	paging::identity_map_device::<BasePageSize>(
+	paging::identity_map_shared::<BasePageSize>(
 		phys_addr.align_down(BasePageSize::SIZE as usize).into(),
 	);
 	let ptr = ptr::with_exposed_provenance_mut::<u8>(phys_addr);

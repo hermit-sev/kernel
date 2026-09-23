@@ -156,7 +156,7 @@ pub fn init_drivers(handlers: &mut InterruptHandlerMap) {
 						virtio_region.size.unwrap()
 							< usize::try_from(paging::BasePageSize::SIZE).unwrap()
 					);
-					paging::identity_map::<paging::BasePageSize>(
+					paging::identity_map_private::<paging::BasePageSize>(
 						virtio_region_start.align_down(paging::BasePageSize::SIZE),
 					);
 

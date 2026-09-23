@@ -55,7 +55,7 @@ unsafe impl PhysicalAllocator for SevAllocator {
         let range = free_list::PageRange::from_start_len(start, SIZE_4KIB).unwrap();
 
         // Re-add an identity mapping for the frame
-        crate::arch::mm::paging::identity_map::<Size4KiB>(physical_addr.into());
+        crate::arch::mm::paging::identity_map_private::<Size4KiB>(physical_addr.into());
 
         // Make frame private under identity mapping
         ghcb::mapping::mapping_utils::make_private(

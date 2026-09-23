@@ -121,7 +121,7 @@ pub fn init_drivers(handlers: &mut InterruptHandlerMap) {
 				plic_region.size.unwrap() < usize::try_from(paging::HugePageSize::SIZE).unwrap()
 			);
 
-			paging::identity_map::<paging::HugePageSize>(plic_region_start);
+			paging::identity_map_private::<paging::HugePageSize>(plic_region_start);
 
 			// TODO: Determine correct context via devicetree and allow more than one context
 			let context = unsafe {
@@ -174,7 +174,7 @@ pub fn init_drivers(handlers: &mut InterruptHandlerMap) {
 			assert!(
 				gem_region.size.unwrap() < usize::try_from(paging::HugePageSize::SIZE).unwrap()
 			);
-			paging::identity_map::<paging::HugePageSize>(gem_region_start);
+			paging::identity_map_private::<paging::HugePageSize>(gem_region_start);
 			match gem::init_device(
 				VirtAddr::new(gem_region_start.as_u64()),
 				irq.try_into().unwrap(),
@@ -219,7 +219,7 @@ pub fn init_drivers(handlers: &mut InterruptHandlerMap) {
 			assert!(
 				virtio_region.size.unwrap() < usize::try_from(paging::HugePageSize::SIZE).unwrap()
 			);
-			paging::identity_map::<paging::HugePageSize>(virtio_region_start);
+			paging::identity_map_private::<paging::HugePageSize>(virtio_region_start);
 
 			// Verify the first register value to find out if this is really an MMIO magic-value.
 			let ptr = virtio_region.starting_address as *mut DeviceRegisters;

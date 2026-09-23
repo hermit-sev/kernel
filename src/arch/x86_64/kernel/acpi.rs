@@ -11,7 +11,8 @@ use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(not(feature = "amd-sev"))]
 use x86_64::instructions::port::Port;
 use x86_64::structures::paging::{PageTableFlags, PhysFrame};
-
+use ghcb::instructions::pvalidate::pvalidate;
+use ghcb::protocols::change_page_state::PageStateChangePageSize;
 #[cfg(feature = "amd-sev")]
 use crate::arch::kernel::amd_sev::allocations::ghcb::EmergencyChannelManager;
 use crate::arch::mm::paging;
@@ -258,7 +259,7 @@ fn detect_rsdp(start_address: PhysAddr, end_address: PhysAddr) -> Result<&'stati
 			let frame = PhysFrame::<BasePageSize>::containing_address(x86_64::PhysAddr::new(
 				current_address as u64,
 			));
-			paging::identity_map::<BasePageSize>(frame.start_address().into());
+			paging::identity_map_shared::<BasePageSize>(frame.start_address().into());
 			current_page = current_address / BasePageSize::SIZE as usize;
 		}
 
@@ -312,7 +313,7 @@ fn detect_acpi() -> Result<&'static AcpiRsdp, ()> {
 
 	// Get the address of the EBDA.
 	let frame = PhysFrame::<BasePageSize>::containing_address(EBDA_PTR_LOCATION.into());
-	paging::identity_map::<BasePageSize>(frame.start_address().into());
+	paging::identity_map_private::<BasePageSize>(frame.start_address().into());
 	let ebda_ptr_location: &u16 =
 		unsafe { &*(VirtAddr::from(EBDA_PTR_LOCATION.as_u64()).as_ptr()) };
 	let ebda_address = PhysAddr::new(u64::from(*ebda_ptr_location) << 4);
@@ -493,6 +494,8 @@ pub fn init() {
 	} else {
 		PhysAddr::new(rsdp.rsdt_physical_address.into())
 	};
+	info!("rsdp returned: {:x?}", rsdt_physical_address);
+
 
 	// Map the RSDT.
 	let rsdt = AcpiTable::map(rsdt_physical_address);

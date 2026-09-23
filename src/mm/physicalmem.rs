@@ -106,7 +106,7 @@ pub unsafe fn map_frame_range(frame_range: PageRange) {
 	(start..end)
 		.step_by(IdentityPageSize::SIZE.try_into().unwrap())
 		.map(|addr| PhysAddr::new(addr.try_into().unwrap()))
-		.for_each(paging::identity_map::<IdentityPageSize>);
+		.for_each(paging::identity_map_private::<IdentityPageSize>);
 }
 
 unsafe fn detect_from_start_info() {

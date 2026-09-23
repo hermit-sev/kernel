@@ -318,7 +318,7 @@ pub fn local_apic_id_count() -> u32 {
 }
 
 fn init_ioapic_address(phys_addr: PhysAddr) {
-	paging::identity_map_device::<BasePageSize>(phys_addr);
+	paging::identity_map_shared::<BasePageSize>(phys_addr);
 
 	IOAPIC_ADDRESS
 		.set(VirtAddr::new(phys_addr.as_u64()))
@@ -534,7 +534,7 @@ pub fn init() {
 	if processor::supports_x2apic() {
 		init_x2apic();
 	} else {
-		paging::identity_map_device::<BasePageSize>(local_apic_physical_address);
+		paging::identity_map_shared::<BasePageSize>(local_apic_physical_address);
 
 		LOCAL_APIC_ADDRESS
 			.set(VirtAddr::new(local_apic_physical_address.as_u64()))
