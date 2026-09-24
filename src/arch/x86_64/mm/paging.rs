@@ -299,6 +299,19 @@ where
 	identity_map_with_flags::<S>(phys_addr, flags)
 }
 
+/// Identity-maps device memory without encryption.
+pub fn identity_map_device<S>(phys_addr: PhysAddr)
+where
+	S: PageSize + fmt::Debug,
+	for<'a> OffsetPageTable<'a>: Mapper<S>,
+{
+	let flags = PageTableEntryFlags::PRESENT
+		| PageTableEntryFlags::WRITABLE
+		| PageTableEntryFlags::NO_EXECUTE;
+
+	identity_map_with_flags::<S>(phys_addr, flags)
+}
+
 pub fn identity_map_with_flags<S>(phys_addr: PhysAddr, flags: PageTableEntryFlags)
 where
 	S: PageSize + fmt::Debug,
