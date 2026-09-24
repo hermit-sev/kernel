@@ -111,14 +111,18 @@ pub fn shutdown(error_code: i32) -> ! {
 
 #[cfg(all(target_arch = "x86_64", feature = "amd-sev"))]
 mod sev {
+	use alloc::boxed::Box;
+	use core::mem::MaybeUninit;
 	use core::ptr;
 	use core::sync::atomic::{Ordering, compiler_fence};
 
 	use hermit_sync::Lazy;
 	use uhyve_interface::GuestPhysAddr;
+	use uhyve_interface::v2::parameters::{ReadParams, SerialWriteBufferParams, WriteParams};
 	use uhyve_interface::v2::{Hypercall, HypercallAddress};
 	use crate::arch::kernel::core_local::core_id;
 	use crate::env::FdtStartInfo;
+	use crate::mm::device_alloc::DeviceAlloc;
 
 	/// uhyve gives every core one page of hypercall memory, shared with the host at launch.
 	const PAGE_SIZE: usize = 0x1000;
@@ -128,6 +132,10 @@ mod sev {
 
 	/// ... the remainder bounces whatever the parameters point to.
 	const PAYLOAD_SIZE: usize = PAGE_SIZE - PARAMS_SIZE;
+
+	/// Larger payloads are bounced through a temporary shared buffer of at most this size and
+	/// split into several hypercalls if they exceed it.
+	const MAX_BOUNCE: usize = 256 * 1024;
 
 	static HYPERCALL_AREA: Lazy<usize> = Lazy::new(|| {
 		crate::env::start_info().fdt()
@@ -160,8 +168,8 @@ mod sev {
 		while unsafe { path.add(len).read_volatile() } != 0 {
 			len += 1;
 			assert!(
-				len < PAYLOAD_SIZE,
-				"hypercall path does not fit the shared page"
+				len < MAX_BOUNCE,
+				"hypercall path does not fit the bounce buffer"
 			);
 		}
 		len + 1
@@ -174,11 +182,6 @@ mod sev {
 			Self(*HYPERCALL_AREA + core_id() as usize * PAGE_SIZE)
 		}
 
-		/// The payload area past the parameter slot.
-		fn payload_ptr(&self) -> *mut u8 {
-			ptr::with_exposed_provenance_mut(self.0 + PARAMS_SIZE)
-		}
-
 		/// The parameter slot at the head of the page.
 		fn params_ptr<T>(&self) -> *mut T {
 			const {
@@ -189,31 +192,118 @@ mod sev {
 			}
 			ptr::with_exposed_provenance_mut(self.0)
 		}
+	}
 
-		/// Copies `len` bytes of guest memory at `addr` into the payload area and returns the
-		/// address of the copy.
-		fn stage_payload(&self, addr: GuestPhysAddr, len: usize) -> GuestPhysAddr {
-			let staged = self.reserve_payload(len);
-			// SAFETY: `addr` is identity-mapped guest RAM, the destination is the core's own
-			// payload area and `reserve_payload` checked that `len` fits it.
+	/// Memory shared with the hypervisor that hypercall payloads are bounced through.
+	enum BounceMemory {
+		/// The payload area of the core's hypercall page, at this address.
+		Page(usize),
+		Shared(Box<[MaybeUninit<u8>], DeviceAlloc>),
+	}
+
+	impl BounceMemory {
+		/// Returns a buffer for up to `len` bytes, capped at [`MAX_BOUNCE`].
+		fn new(page: &HypercallPage, len: usize) -> Self {
+			if len <= PAYLOAD_SIZE {
+				Self::Page(page.0 + PARAMS_SIZE)
+			} else {
+				Self::Shared(Box::new_uninit_slice_in(len.min(MAX_BOUNCE), DeviceAlloc))
+			}
+		}
+
+		fn capacity(&self) -> usize {
+			match self {
+				Self::Page(_) => PAYLOAD_SIZE,
+				Self::Shared(buf) => buf.len(),
+			}
+		}
+
+		fn as_mut_ptr(&mut self) -> *mut u8 {
+			match self {
+				Self::Page(addr) => ptr::with_exposed_provenance_mut(*addr),
+				Self::Shared(buf) => buf.as_mut_ptr().cast(),
+			}
+		}
+
+		/// The address the hypervisor accesses the buffer at.
+		fn guest_addr(&mut self) -> GuestPhysAddr {
+			match self {
+				Self::Page(addr) => GuestPhysAddr::new(*addr as u64),
+				Self::Shared(buf) => {
+					GuestPhysAddr::new(DeviceAlloc.phys_addr_from(buf.as_mut_ptr()).as_u64())
+				}
+			}
+		}
+
+		/// Copies `len` bytes of guest memory at `src` into the buffer.
+		fn copy_from(&mut self, src: GuestPhysAddr, len: usize) {
+			assert!(len <= self.capacity());
+			// SAFETY: `src` is identity-mapped guest RAM and the buffer holds `len` bytes.
 			unsafe {
 				ptr::copy_nonoverlapping(
-					ptr::with_exposed_provenance_mut(addr.as_u64() as usize),
-					self.payload_ptr(),
+					ptr::with_exposed_provenance(src.as_u64() as usize),
+					self.as_mut_ptr(),
 					len,
 				);
 			}
-			staged
 		}
 
-		/// Hands out the payload area for the hypervisor to fill in with up to `len` bytes.
-		fn reserve_payload(&self, len: usize) -> GuestPhysAddr {
-			// TODO: fall back to a larger shared buffer instead of panicing.
-			assert!(
-				len <= PAYLOAD_SIZE,
-				"hypercall payload of {len} bytes does not fit the shared page"
-			);
-			GuestPhysAddr::new((self.0 + PARAMS_SIZE) as u64)
+		/// Copies the first `len` bytes of the buffer to guest memory at `dst`.
+		fn drain(&mut self, dst: GuestPhysAddr, len: usize) {
+			assert!(len <= self.capacity());
+			// SAFETY: `dst` is identity-mapped guest RAM of at least `len` bytes and the buffer
+			// holds `len` bytes.
+			unsafe {
+				ptr::copy_nonoverlapping(
+					self.as_mut_ptr(),
+					ptr::with_exposed_provenance_mut(dst.as_u64() as usize),
+					len,
+				);
+			}
+		}
+	}
+
+	#[derive(PartialEq, Eq)]
+	enum Direction {
+		/// The hypervisor reads the buffer.
+		ToHost,
+		/// The hypervisor fills in the buffer.
+		FromHost,
+	}
+
+	/// Bounces the `len` bytes at `buf` through [`BounceMemory`] until all bytes are 
+	/// transferred or a chunk comes back short or fails.
+	///
+	/// Returns the total bytes transferred, or the errno if the first chunk fails.
+	fn bounce_chunked(
+		page: &HypercallPage,
+		buf: GuestPhysAddr,
+		len: usize,
+		direction: Direction,
+		mut hypercall: impl FnMut(GuestPhysAddr, usize) -> i64,
+	) -> i64 {
+		let mut memory = BounceMemory::new(page, len);
+		let mut done = 0;
+		loop {
+			let chunk_buf = GuestPhysAddr::new(buf.as_u64() + done as u64);
+			let chunk_len = (len - done).min(memory.capacity());
+			if direction == Direction::ToHost {
+				memory.copy_from(chunk_buf, chunk_len);
+			}
+			let ret = hypercall(memory.guest_addr(), chunk_len);
+			if ret < 0 {
+				return if done == 0 { ret } else { done as i64 };
+			}
+			// Clamped, so a hypervisor reporting more than it was offered cannot overrun the
+			// caller's buffer.
+			let ret = (ret as usize).min(chunk_len);
+			if direction == Direction::FromHost {
+				memory.drain(chunk_buf, ret);
+			}
+			done += ret;
+			if ret < chunk_len || done == len {
+				return done as i64;
+			}
 		}
 	}
 
@@ -230,48 +320,20 @@ mod sev {
 		}
 	}
 
-	/// Issues a hypercall whose parameters point at a buffer the hypervisor reads.
-	fn hypercall_with_buffer_input<T: Copy>(
+	/// Issues a hypercall whose parameters point at the NUL-terminated path `name`.
+	fn hypercall_with_path<T: Copy>(
 		page: &HypercallPage,
 		addr: u16,
 		params: &mut T,
-		buf: GuestPhysAddr,
-		len: usize,
-		set_buf: impl Fn(&mut T, GuestPhysAddr),
+		name: GuestPhysAddr,
+		set_name: impl Fn(&mut T, GuestPhysAddr),
 	) {
-		let mut staged = *params;
-		set_buf(&mut staged, page.stage_payload(buf, len));
-		perform_hypercall(page, addr, &mut staged);
-		set_buf(&mut staged, buf);
-		*params = staged;
-	}
-
-	/// Issues a hypercall whose parameters point at a buffer of `len` bytes the hypervisor fills in.
-	fn hypercall_with_buffer_output<T: Copy>(
-		page: &HypercallPage,
-		addr: u16,
-		params: &mut T,
-		buf: GuestPhysAddr,
-		len: usize,
-		set_buf: impl Fn(&mut T, GuestPhysAddr),
-		out_len: impl Fn(&T) -> usize,
-	) {
-		let mut staged = *params;
-		set_buf(&mut staged, page.reserve_payload(len));
-		perform_hypercall(page, addr, &mut staged);
-		set_buf(&mut staged, buf);
-		*params = staged;
-
-		// Clamped to `len`, so a hypervisor reporting more than it was offered cannot overrun the caller's buffer or read past the payload area.
-		let written = out_len(params).min(len);
-		// SAFETY: `buf` is identity-mapped guest RAM of at least `len` bytes.
-		unsafe {
-			ptr::copy_nonoverlapping(
-				page.payload_ptr(),
-				ptr::with_exposed_provenance_mut(buf.as_u64() as usize),
-				written,
-			);
-		}
+		let len = path_len(name);
+		let mut memory = BounceMemory::new(page, len);
+		memory.copy_from(name, len);
+		set_name(params, memory.guest_addr());
+		perform_hypercall(page, addr, params);
+		set_name(params, name);
 	}
 
 	pub(crate) fn uhyve_hypercall(hypercall: Hypercall<'_>) {
@@ -288,55 +350,50 @@ mod sev {
 			Hypercall::FileClose(params) => perform_hypercall(&page, addr, params),
 			Hypercall::FileLseek(params) => perform_hypercall(&page, addr, params),
 			Hypercall::FileOpen(params) => {
-				let name = params.name;
-				hypercall_with_buffer_input(
-					&page,
-					addr,
-					params,
-					name,
-					path_len(name),
-					|p, staged| {
-						p.name = staged;
-					},
-				);
+				hypercall_with_path(&page, addr, params, params.name, |p, name| p.name = name);
 			}
 			Hypercall::FileUnlink(params) => {
-				let name = params.name;
-				hypercall_with_buffer_input(
+				hypercall_with_path(&page, addr, params, params.name, |p, name| p.name = name);
+			}
+			Hypercall::FileWrite(params) => {
+				let orig = *params;
+				params.ret = bounce_chunked(
 					&page,
-					addr,
-					params,
-					name,
-					path_len(name),
-					|p, staged| {
-						p.name = staged;
+					orig.buf,
+					orig.len as usize,
+					Direction::ToHost,
+					|buf, len| {
+						let mut chunk = WriteParams { buf, len: len as u64, ..orig };
+						perform_hypercall(&page, addr, &mut chunk);
+						chunk.ret
 					},
 				);
 			}
-			Hypercall::FileWrite(params) => {
-				let (buf, len) = (params.buf, params.len as usize);
-				hypercall_with_buffer_input(&page, addr, params, buf, len, |p, staged| {
-					p.buf = staged
-				});
-			}
 			Hypercall::SerialWriteBuffer(params) => {
-				let mut params = *params;
-				let (buf, len) = (params.buf, params.len as usize);
-				hypercall_with_buffer_input(&page, addr, &mut params, buf, len, |p, staged| {
-					p.buf = staged
-				});
+				bounce_chunked(
+					&page,
+					params.buf,
+					params.len as usize,
+					Direction::ToHost,
+					|buf, len| {
+						let mut chunk = SerialWriteBufferParams { buf, len: len as u64 };
+						perform_hypercall(&page, addr, &mut chunk);
+						len as i64
+					},
+				);
 			}
 			Hypercall::FileRead(params) => {
-				let (buf, len) = (params.buf, params.len as usize);
-				hypercall_with_buffer_output(
+				let orig = *params;
+				params.ret = bounce_chunked(
 					&page,
-					addr,
-					params,
-					buf,
-					len,
-					|p, staged| p.buf = staged,
-					// Negative `ret` is an errno.
-					|p| p.ret.max(0) as usize,
+					orig.buf,
+					orig.len as usize,
+					Direction::FromHost,
+					|buf, len| {
+						let mut chunk = ReadParams { buf, len: len as u64, ..orig };
+						perform_hypercall(&page, addr, &mut chunk);
+						chunk.ret
+					},
 				);
 			}
 
