@@ -143,7 +143,7 @@ pub fn boot_processor_main() -> ! {
 	info!("Data segment end: {:p}", elf_symbols::data_end());
 	info!("Executable end:   {:p}", elf_symbols::executable_end());
 
-	info!("{}", env::start_info().display());
+	// info!("{}", env::start_info().display());
 
 	kernel::boot_processor_init();
 
