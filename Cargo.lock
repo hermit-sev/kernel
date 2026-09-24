@@ -894,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "ghcb"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5009895dbc6f704f844345c6c404200325c82f8d60a153fd87041822b84c7348"
+checksum = "cd2b8233a42c848667c59cc22754ad49209aa07191b778ee23cd30c62b3dc8a3"
 dependencies = [
  "aes-gcm",
  "bitfield-struct 0.13.0",
