@@ -131,11 +131,11 @@ pub fn boot_processor_init() {
 	if env::start_info().is_uhyve() {
 		processor::detect_frequency();
 		crate::logging::KERNEL_LOGGER.set_time(true);
+		systemtime::init();
 	}
 
 	#[cfg(feature = "amd-sev")]
 	info!("Compiled with SEV feature, and SEV is enabled");
-	systemtime::init();
 
 	processor::detect_features();
 	processor::configure();
@@ -164,6 +164,15 @@ pub fn boot_processor_init() {
 	processor::print_information();
 	debug!("Cr0 = {:?}", Cr0::read());
 	debug!("Cr4 = {:?}", Cr4::read());
+
+	#[cfg(feature = "uhyve")]
+	if !env::start_info().is_uhyve() {
+		systemtime::init();
+	}
+
+	#[cfg(not(feature = "uhyve"))]
+	systemtime::init();
+
 	crate::logging::KERNEL_LOGGER.set_time(true);
 
 	#[cfg(feature = "acpi")]
