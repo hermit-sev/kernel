@@ -74,7 +74,7 @@ impl ConfidentialComputingBlob {
 		assert_eq!(size_of::<CPUIDPage>(), cc_blob.cpuid_page_size as usize);
 
 		let cpuid = unsafe { cc_blob.cpuid_page_pa.as_mut()? };
-
+		info!("Read {} CPUID entries", cpuid.entries());
 		Some(Self { secrets, cpuid })
 	}
 
