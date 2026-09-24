@@ -20,8 +20,9 @@ pub use self::start_info::*;
 static CLI: InterruptSpinMutex<Option<Cli>> = InterruptSpinMutex::new(None);
 
 pub fn init() {
+	let cli = Cli::default();
 	assert!(
-		CLI.lock().replace(Cli::default()).is_none(),
+		CLI.lock().replace(cli).is_none(),
 		"env::init must only be called once"
 	);
 }
