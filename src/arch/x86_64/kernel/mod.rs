@@ -161,19 +161,16 @@ pub fn boot_processor_init() {
 
     processor::post_configure();
 	processor::detect_frequency();
+
+	#[cfg(not(feature = "uhyve"))]
+	crate::logging::KERNEL_LOGGER.set_time(true);
+
 	processor::print_information();
 	debug!("Cr0 = {:?}", Cr0::read());
 	debug!("Cr4 = {:?}", Cr4::read());
 
-	#[cfg(feature = "uhyve")]
-	if !env::start_info().is_uhyve() {
-		systemtime::init();
-	}
-
 	#[cfg(not(feature = "uhyve"))]
 	systemtime::init();
-
-	crate::logging::KERNEL_LOGGER.set_time(true);
 
 	#[cfg(feature = "acpi")]
 	acpi::init();
