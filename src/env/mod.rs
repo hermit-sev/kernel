@@ -172,7 +172,7 @@ pub fn insert_var(key: &str, value: String) {
 		.as_mut()
 		.unwrap()
 		.env_vars
-		.insert(key.to_owned(), value);
+		.insert(Cow::Owned(key.to_owned()), value);
 }
 
 #[allow(dead_code)]
