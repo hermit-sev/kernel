@@ -11,8 +11,6 @@ use memory_addresses::{PhysAddr, VirtAddr};
 #[cfg(not(feature = "amd-sev"))]
 use x86_64::instructions::port::Port;
 use x86_64::structures::paging::{PageTableFlags, PhysFrame};
-use ghcb::instructions::pvalidate::pvalidate;
-use ghcb::protocols::change_page_state::PageStateChangePageSize;
 #[cfg(feature = "amd-sev")]
 use crate::arch::kernel::amd_sev::allocations::ghcb::EmergencyChannelManager;
 use crate::arch::mm::paging;
