@@ -552,7 +552,7 @@ impl NotifCtrl {
 			unsafe { self.notif_addr.write_volatile(data.into_bits()) }
 		} else {
 			unsafe {
-				let vqn: le16 = data.vqn().into();
+				let vqn: le16 = data.vq_notif_config_data().into();
 				self.notif_addr.write_volatile(vqn.into())
 			}
 		};
