@@ -127,8 +127,12 @@ unsafe fn clone_relocate_stack(
 /// Real Boot Processor initialization as soon as we have put the first Welcome message on the screen.
 #[cfg(target_os = "none")]
 pub fn boot_processor_init() {
-	#[cfg(feature = "uhyve")]
-	if env::start_info().is_uhyve() {
+	let is_uhyve = cfg_select! {
+		feature = "uhyve" => env::start_info().is_uhyve(),
+		_ => false,
+	};
+
+	if is_uhyve {
 		processor::detect_frequency();
 		crate::logging::KERNEL_LOGGER.set_time(true);
 		systemtime::init();
@@ -162,15 +166,17 @@ pub fn boot_processor_init() {
     processor::post_configure();
 	processor::detect_frequency();
 
-	#[cfg(not(feature = "uhyve"))]
-	crate::logging::KERNEL_LOGGER.set_time(true);
+	if !is_uhyve {
+		crate::logging::KERNEL_LOGGER.set_time(true);
+	}
 
 	processor::print_information();
 	debug!("Cr0 = {:?}", Cr0::read());
 	debug!("Cr4 = {:?}", Cr4::read());
 
-	#[cfg(not(feature = "uhyve"))]
-	systemtime::init();
+	if !is_uhyve {
+		systemtime::init();
+	}
 
 	#[cfg(feature = "acpi")]
 	acpi::init();
