@@ -118,7 +118,9 @@ mod sev {
 
 	use hermit_sync::Lazy;
 	use uhyve_interface::GuestPhysAddr;
-	use uhyve_interface::v2::parameters::{ReadParams, SerialWriteBufferParams, WriteParams};
+	use uhyve_interface::v2::parameters::{
+		FileAttr, ReadParams, SerialWriteBufferParams, WriteParams,
+	};
 	use uhyve_interface::v2::{Hypercall, HypercallAddress};
 	use crate::arch::kernel::core_local::core_id;
 	use crate::env::FdtStartInfo;
@@ -235,14 +237,14 @@ mod sev {
 			}
 		}
 
-		/// Copies `len` bytes of guest memory at `src` into the buffer.
-		fn copy_from(&mut self, src: GuestPhysAddr, len: usize) {
-			assert!(len <= self.capacity());
-			// SAFETY: `src` is identity-mapped guest RAM and the buffer holds `len` bytes.
+		/// Copies `len` bytes of guest memory at `src` into the buffer, starting at `offset`.
+		fn copy_from(&mut self, offset: usize, src: GuestPhysAddr, len: usize) {
+			assert!(offset + len <= self.capacity());
+			// SAFETY: `src` is identity-mapped guest RAM and the buffer holds `offset + len` bytes.
 			unsafe {
 				ptr::copy_nonoverlapping(
 					ptr::with_exposed_provenance(src.as_u64() as usize),
-					self.as_mut_ptr(),
+					self.as_mut_ptr().add(offset),
 					len,
 				);
 			}
@@ -288,7 +290,7 @@ mod sev {
 			let chunk_buf = GuestPhysAddr::new(buf.as_u64() + done as u64);
 			let chunk_len = (len - done).min(memory.capacity());
 			if direction == Direction::ToHost {
-				memory.copy_from(chunk_buf, chunk_len);
+				memory.copy_from(0, chunk_buf, chunk_len);
 			}
 			let ret = hypercall(memory.guest_addr(), chunk_len);
 			if ret < 0 {
@@ -330,7 +332,7 @@ mod sev {
 	) {
 		let len = path_len(name);
 		let mut memory = BounceMemory::new(page, len);
-		memory.copy_from(name, len);
+		memory.copy_from(0, name, len);
 		set_name(params, memory.guest_addr());
 		perform_hypercall(page, addr, params);
 		set_name(params, name);
@@ -395,6 +397,29 @@ mod sev {
 						chunk.ret
 					},
 				);
+			}
+			Hypercall::FileFstat(params) => {
+				let attr = params.attr;
+				let len = size_of::<FileAttr>();
+				let mut memory = BounceMemory::new(&page, len);
+				params.attr = memory.guest_addr();
+				perform_hypercall(&page, addr, params);
+				params.attr = attr;
+				memory.drain(attr, len);
+			}
+			Hypercall::FileStat(params) => {
+				let orig = *params;
+				let attr_len = size_of::<FileAttr>();
+				let name_len = path_len(orig.name);
+				let mut memory = BounceMemory::new(&page, attr_len + name_len);
+				memory.copy_from(attr_len, orig.name, name_len);
+				let bounce = memory.guest_addr();
+				params.attr = bounce;
+				params.name = GuestPhysAddr::new(bounce.as_u64() + attr_len as u64);
+				perform_hypercall(&page, addr, params);
+				params.attr = orig.attr;
+				params.name = orig.name;
+				memory.drain(orig.attr, attr_len);
 			}
 
 			h => todo!("unimplemented hypercall {h:?}"),
