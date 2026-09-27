@@ -55,8 +55,9 @@ fn determine_mtu(dev_cfg: &NetDevCfg) -> u16 {
 fn determine_rx_buf_size(dev_cfg: &NetDevCfg) -> u32 {
 	// See Virtio specification v1.1 - 5.1.6.3.1 and 5.1.4.2
 
-	// Our desired minimum buffer size - we want it to be at least the MTU generally
-	let mut min_buf_size = determine_mtu(dev_cfg).into();
+	// Our desired minimum buffer size - we want it to fit an MTU-sized packet plus its Ethernet header
+	let mut min_buf_size =
+		u32::from(determine_mtu(dev_cfg)) + u32::try_from(ETHERNET_HEADER_LEN).unwrap();
 
 	// If VIRTIO_NET_F_MRG_RXBUF is negotiated, each buffer MUST be at least the size of the struct virtio_net_hdr.
 	// We just use MTU in that case, but otherwise...
