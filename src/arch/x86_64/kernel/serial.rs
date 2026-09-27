@@ -117,16 +117,16 @@ impl Write for SerialDevice {
 
 			match *last_byte {
 				8 | 0x7f => {
-					uart.write(&buff[..buff.len() - 1])?;
-					uart.write(&[8, b' ', 8])?;
+					uart.write_all(&buff[..buff.len() - 1])?;
+					uart.write_all(&[8, b' ', 8])?;
 				}
 				// Normal Rust newlines to terminal-compatible newlines.
 				b'\n' => {
-					uart.write(&buff[..buff.len() - 1])?;
-					uart.write(&[b'\r', b'\n'])?;
+					uart.write_all(&buff[..buff.len() - 1])?;
+					uart.write_all(&[b'\r', b'\n'])?;
 				}
 				_ => {
-					uart.write(buff)?;
+					uart.write_all(buff)?;
 				}
 			}
 		}

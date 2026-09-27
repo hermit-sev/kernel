@@ -23,6 +23,10 @@ impl SerialPort {
 		self.0.write(data).map_err(|_| Errno::Again)
 	}
 
+	pub fn write_all(&mut self, data: &[u8]) -> Result<(), Errno> {
+		self.0.write_all(data).map_err(|_| Errno::Again)
+	}
+
 	pub fn read_ready(&mut self) -> Result<bool, Errno> {
 		Ok(self.0.read_ready())
 	}
