@@ -593,15 +593,12 @@ impl PerCoreScheduler {
 			let current_task = self.current_task.borrow();
 			let mut object_map = current_task.object_map.write();
 
-			let obj = object_map.get(&fd1).cloned().ok_or(Errno::Badf)?;
+			let obj = object_map.get(&fd1).cloned().ok_or_else(|| Errno::Badf)?;
 
-			match object_map.entry(fd2) {
-				hash_map::Entry::Occupied(_occupied_entry) => Err(Errno::Mfile),
-				hash_map::Entry::Vacant(vacant_entry) => {
-					vacant_entry.insert(obj);
-					Ok(fd2)
-				}
+			if object_map.insert(fd2, obj).is_some() {
+				debug!("dup2({fd1}, {fd2}): replaced previously open fd {fd2}");
 			}
+			Ok(fd2)
 		})
 	}
 
