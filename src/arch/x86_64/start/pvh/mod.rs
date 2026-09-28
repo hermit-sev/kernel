@@ -6,6 +6,8 @@ mod gdt;
 mod page_tables;
 mod stack;
 
+use core::sync::atomic::Ordering;
+use crate::arch::kernel::CURRENT_STACK_ADDRESS;
 use self::stack::{STACK, Stack};
 use crate::env;
 
@@ -41,6 +43,10 @@ unsafe extern "C" fn _start() -> ! {
 
 /// The Rust entry point.
 unsafe extern "C" fn rust_start(start_info_paddr: u32) -> ! {
+	#[allow(static_mut_refs)]
+	let stack_ptr = STACK.as_mut_ptr().cast::<u8>();
+	CURRENT_STACK_ADDRESS.store(stack_ptr, Ordering::Relaxed);
+
 	debug!("Entered Rust.");
 
 	unsafe {
