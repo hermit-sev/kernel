@@ -65,6 +65,8 @@ pub extern "C" fn sys_mmap(size: usize, prot_flags: MemoryProtection, ret: &mut 
 	if !prot_flags.contains(MemoryProtection::Exec) {
 		flags.execute_disable();
 	}
+	#[cfg(feature = "amd-sev")]
+	flags.set_encrypted(true);
 
 	paging::map::<BasePageSize>(virtual_address, physical_address, count, flags);
 
@@ -119,6 +121,8 @@ pub extern "C" fn sys_mprotect(ptr: *mut u8, size: usize, prot_flags: MemoryProt
 	if !prot_flags.contains(MemoryProtection::Exec) {
 		flags.execute_disable();
 	}
+	#[cfg(feature = "amd-sev")]
+	flags.set_encrypted(true);
 
 	let virtual_address = VirtAddr::from_ptr(ptr);
 
