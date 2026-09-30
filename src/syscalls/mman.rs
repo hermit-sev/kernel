@@ -70,6 +70,10 @@ pub extern "C" fn sys_mmap(size: usize, prot_flags: MemoryProtection, ret: &mut 
 
 	paging::map::<BasePageSize>(virtual_address, physical_address, count, flags);
 
+	unsafe {
+		virtual_address.as_mut_ptr::<u8>().write_bytes(0, size);
+	}
+
 	*ret = virtual_address.as_mut_ptr();
 
 	0
