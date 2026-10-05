@@ -119,7 +119,7 @@ mod sev {
 	use hermit_sync::Lazy;
 	use uhyve_interface::GuestPhysAddr;
 	use uhyve_interface::v2::parameters::{
-		FileAttr, ReadParams, SerialWriteBufferParams, WriteParams,
+		FileAttr, GetdentResult, ReadParams, SerialWriteBufferParams, WriteParams,
 	};
 	use uhyve_interface::v2::{Hypercall, HypercallAddress};
 	use crate::arch::kernel::core_local::core_id;
@@ -420,6 +420,19 @@ mod sev {
 				params.attr = orig.attr;
 				params.name = orig.name;
 				memory.drain(orig.attr, attr_len);
+			}
+			Hypercall::Getdents(params) => {
+				let orig = *params;
+				let mut memory = BounceMemory::new(&page, orig.len as usize);
+				let len = (orig.len as usize).min(memory.capacity());
+				params.buf = memory.guest_addr();
+				params.len = len as u64;
+				perform_hypercall(&page, addr, params);
+				params.buf = orig.buf;
+				params.len = orig.len;
+				if let GetdentResult::Success(written) = params.ret {
+					memory.drain(orig.buf, (written as usize).min(len));
+				}
 			}
 
 			h => todo!("unimplemented hypercall {h:?}"),
