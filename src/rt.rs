@@ -50,11 +50,17 @@ extern "C" fn initd(_arg: usize) {
 
 	// Initialize Drivers
 	drivers::init();
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("drivers initialized");
 	// The filesystem needs to be initialized before network to allow writing packet captures to a file.
 	fs::init();
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("fs initialized");
 	executor::init();
 
 	syscalls::init();
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("syscalls initialized");
 	#[cfg(feature = "shell")]
 	crate::shell::init();
 
@@ -71,6 +77,8 @@ extern "C" fn initd(_arg: usize) {
 	}
 
 	info!("Jumping into application");
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("application entry");
 
 	#[cfg(not(test))]
 	unsafe {
@@ -117,6 +125,8 @@ pub fn boot_processor_main() -> ! {
 	unsafe {
 		logging::init();
 	}
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("logging initialized");
 
 	info!("Welcome to Hermit {}", env!("CARGO_PKG_VERSION"));
 	if let Some(git_version) = built_info::GIT_VERSION {
@@ -157,6 +167,8 @@ pub fn boot_processor_main() -> ! {
 
 	#[cfg(all(feature = "smp", not(feature = "linux-boot")))]
 	synch_all_cores();
+	#[cfg(feature = "uhyve")]
+	crate::uhyve::event("all cores up");
 
 	#[cfg(feature = "pci")]
 	drivers::pci::print_information();

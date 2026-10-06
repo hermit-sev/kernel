@@ -9,6 +9,7 @@ use uhyve_interface::v2::parameters::*;
 
 use crate::arch::kernel::processor;
 use crate::arch::mm::paging::virtual_to_physical;
+use crate::env::UhyveStartInfo;
 
 #[cfg(target_os = "none")]
 hermit_entry::define_uhyve_interface_version!(uhyve_interface::UHYVE_INTERFACE_VERSION);
@@ -25,6 +26,22 @@ pub(crate) fn serial_buf_hypercall(buf: &[u8]) {
 		len: buf.len() as u64,
 	};
 	uhyve_hypercall(Hypercall::SerialWriteBuffer(&p));
+}
+
+/// Reports `desc` as an event to uhyve's timeline. Does nothing if not running on uhyve.
+pub(crate) fn event(desc: &str) {
+	if !crate::env::start_info().is_uhyve() {
+		return;
+	}
+	let p = EventParams {
+		len: desc.len() as u64,
+		buf: GuestPhysAddr::new(
+			virtual_to_physical(VirtAddr::from_ptr(desc.as_ptr()))
+				.unwrap()
+				.as_u64(),
+		),
+	};
+	uhyve_hypercall(Hypercall::Event(&p));
 }
 
 /// Calculates the physical address of the struct passed as reference.
@@ -58,6 +75,7 @@ fn hypercall_data(hypercall: &Hypercall<'_>) -> u64 {
 		Hypercall::SerialWriteBuffer(data) => data_addr(*data),
 		Hypercall::SerialWriteByte(byte) => u64::from(*byte),
 		Hypercall::Snapshot(data) => data_addr(*data),
+		Hypercall::Event(data) => data_addr(*data),
 		h => todo!("unimplemented hypercall {h:?}"),
 	}
 }
@@ -119,7 +137,7 @@ mod sev {
 	use hermit_sync::Lazy;
 	use uhyve_interface::GuestPhysAddr;
 	use uhyve_interface::v2::parameters::{
-		FileAttr, GetdentResult, ReadParams, SerialWriteBufferParams, WriteParams,
+		EventParams, FileAttr, GetdentResult, ReadParams, SerialWriteBufferParams, WriteParams,
 	};
 	use uhyve_interface::v2::{Hypercall, HypercallAddress};
 	use crate::arch::kernel::core_local::core_id;
@@ -383,6 +401,14 @@ mod sev {
 						len as i64
 					},
 				);
+			}
+			Hypercall::Event(params) => {
+				let len = params.len as usize;
+				let mut memory = BounceMemory::new(&page, len);
+				let len = len.min(memory.capacity());
+				memory.copy_from(0, params.buf, len);
+				let mut bounced = EventParams { len: len as u64, buf: memory.guest_addr() };
+				perform_hypercall(&page, addr, &mut bounced);
 			}
 			Hypercall::FileRead(params) => {
 				let orig = *params;

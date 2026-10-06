@@ -131,11 +131,16 @@ pub fn boot_processor_init() {
 		feature = "uhyve" => env::start_info().is_uhyve(),
 		_ => false,
 	};
+	let event = |_desc: &str| {
+		#[cfg(feature = "uhyve")]
+		crate::uhyve::event(_desc);
+	};
 
 	if is_uhyve {
 		processor::detect_frequency();
 		crate::logging::KERNEL_LOGGER.set_time(true);
 		systemtime::init();
+		event("frequency & systemtime");
 	}
 
 	#[cfg(feature = "amd-sev")]
@@ -143,25 +148,32 @@ pub fn boot_processor_init() {
 
 	processor::detect_features();
 	processor::configure();
+	event("processor configured");
 
 	#[cfg(feature = "vga")]
 	vga::init();
 
 	crate::mm::init();
+	event("mm initialized");
 	crate::mm::print_information();
 	allocate_copy_jump_stack();
 	CoreLocal::get().add_irq_counter();
 	env::init();
+	event("env initialized");
 	gdt::add_current_core();
 	interrupts::load_idt();
 	interrupts::install();
 
 	info!("Interrupts installed!");
+	event("interrupts installed");
 
 	#[cfg(feature = "amd-sev")]
 	amd_sev::post_init();
+	#[cfg(feature = "amd-sev")]
+	event("SEV post-init");
 
 	pic::init(); // init PIC after interrupts have been installed (VC handler for AMD SEV)
+	event("PIC initialized");
 
     processor::post_configure();
 	processor::detect_frequency();
@@ -177,18 +189,25 @@ pub fn boot_processor_init() {
 	if !is_uhyve {
 		systemtime::init();
 	}
+	event("processor info printed");
 
 	#[cfg(feature = "acpi")]
 	acpi::init();
+	#[cfg(feature = "acpi")]
+	event("ACPI initialized");
 
 	#[cfg(feature = "pci")]
 	pci::init();
+	#[cfg(feature = "pci")]
+	event("PCI initialized");
 
 	apic::init();
+	event("APIC initialized");
 	scheduler::install_timer_handler();
 	finish_processor_init();
 
-	info!("Main processor initialized!")
+	info!("Main processor initialized!");
+	event("BSP initialized");
 }
 
 /// Application Processor initialization

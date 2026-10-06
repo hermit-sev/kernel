@@ -79,6 +79,8 @@ unsafe extern "C" fn pre_init(boot_info: Option<&'static RawBootInfo>, cpu_id: u
 		unsafe {
 			env::set_start_info(*boot_info.unwrap());
 		}
+		#[cfg(all(feature = "uhyve", not(feature = "amd-sev")))]
+		crate::uhyve::event("kernel entry");
 
 		crate::rt::boot_processor_main()
 	} else {

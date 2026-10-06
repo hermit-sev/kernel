@@ -2303,7 +2303,7 @@ dependencies = [
 [[package]]
 name = "uhyve-interface"
 version = "0.3.0"
-source = "git+https://github.com/hermit-os/uhyve.git?branch=uhyve-if-snapshot#86bfff8613a4f1cf308bfebcf613dbe5411dc93d"
+source = "git+ssh://git@github.com/hermit-sev/uhyve.git?branch=sev#a3599996a7801948dcb657f44a53dcd70f9556b1"
 dependencies = [
  "aarch64",
  "hermit-abi",
