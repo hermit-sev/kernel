@@ -4,6 +4,8 @@ use pci_types::{ConfigRegionAccess, PciAddress, PciHeader};
 use x86_64::instructions::port::Port;
 
 use crate::drivers::pci::{PCI_DEVICES, PciDevice};
+#[cfg(feature = "uhyve")]
+use crate::env::FdtStartInfo;
 
 const PCI_MAX_BUS_NUMBER: u8 = 32;
 const PCI_CONFIG_ADDRESS_ENABLE: u32 = 1 << 31;
@@ -89,6 +91,22 @@ pub(crate) fn init() {
 	#[cfg(feature = "acpi")]
 	if pcie::init_pcie() {
 		info!("Initialized PCIe");
+		return;
+	}
+
+	// uhyve lists PCI devices, so no need for scanning
+	#[cfg(feature = "uhyve")]
+	if let Some(fdt) = crate::env::start_info().fdt()
+		&& let Some(node) = fdt.find_node("/uhyve,pci")
+	{
+		let bus = node.property("bus").unwrap().as_usize().unwrap() as u8;
+		let pci_config = PciConfigRegion::Pci(LegacyPciConfigRegion::new());
+		for device in node.property("devices").unwrap().value.chunks_exact(4) {
+			let device = u32::from_be_bytes(device.try_into().unwrap()) as u8;
+			let device = PciDevice::new(PciAddress::new(0, bus, device, 0), pci_config);
+			PCI_DEVICES.with(|pci_devices| pci_devices.unwrap().push(device));
+		}
+		info!("Initialized Uhyve PCI");
 		return;
 	}
 
