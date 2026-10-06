@@ -16,7 +16,7 @@ use crate::arch::mm::paging::{
 use crate::mm::FrameAlloc;
 
 const UNIT: usize = LargePageSize::SIZE as usize;
-const INITIAL_SIZE: usize = 4 * UNIT;
+const INITIAL_SIZE: usize = 1 * UNIT;
 const MAX_GROW_SIZE: usize = 64 << 20;
 
 /// A heap [`Source`] that maps and validates more memory whenever the heap runs out of memory.
