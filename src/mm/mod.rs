@@ -202,7 +202,10 @@ pub(crate) fn init() {
 	{
 		// we reserve 10% of the memory for stack allocations
 		#[cfg(not(feature = "mman"))]
-		let stack_reserve: usize = (avail_mem * 10) / 100;
+		// TODO: Workaround. Needs a proper solution!
+		use core::cmp::{max, min};
+		#[cfg(not(feature = "mman"))]
+		let stack_reserve: usize = max((avail_mem * 10) / 100, 38 * 1024 * 1024);
 
 		// At first, we map only a small part into the heap.
 		// Afterwards, we already use the heap and map the rest into
