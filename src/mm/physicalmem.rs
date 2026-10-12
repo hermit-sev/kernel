@@ -80,7 +80,7 @@ pub fn total_memory_size() -> usize {
 	TOTAL_MEMORY.load(Ordering::Relaxed)
 }
 
-#[cfg(feature = "hermit-entry")]
+#[cfg(any(feature = "hermit-entry", feature = "linux-boot", feature = "pvh"))]
 pub unsafe fn map_frame_range(frame_range: PageRange) {
 	use memory_addresses::PhysAddr;
 
@@ -188,7 +188,7 @@ unsafe fn detect_from_start_info() {
 	let frame_ranges = PHYSICAL_FREE_LIST.lock().iter().collect::<Vec<_>>();
 
 	for frame_range in frame_ranges {
-		#[cfg(feature = "hermit-entry")]
+		#[cfg(any(feature = "hermit-entry", feature = "linux-boot", feature = "pvh"))]
 		unsafe {
 			map_frame_range(frame_range);
 		}
