@@ -1107,6 +1107,27 @@ fn qemu_exit(success: bool) {
 	}
 }
 
+/// Port for boot timing markers, traced on the host.
+const MARKER_PORT: u16 = 0xe9;
+
+/// Writes a boot timing marker to [`MARKER_PORT`].
+#[cfg(not(feature = "amd-sev"))]
+pub fn marker(code: u8) {
+	unsafe {
+		Port::<u8>::new(MARKER_PORT).write(code);
+	}
+}
+
+/// Writes a boot timing marker to [`MARKER_PORT`].
+#[cfg(feature = "amd-sev")]
+pub fn marker(code: u8) {
+	unsafe {
+		EmergencyChannelManager::get_channel().with_ghcb_force(|mut ghcb| {
+			IoIoRequest::new(MARKER_PORT, IoIoOperation::ByteOut(code)).execute_request(&mut ghcb)
+		});
+	}
+}
+
 /// Shutdown the system
 pub fn shutdown(error_code: i32) -> ! {
 	qemu_exit(error_code == 0);

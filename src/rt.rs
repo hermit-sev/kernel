@@ -79,6 +79,8 @@ extern "C" fn initd(_arg: usize) {
 	info!("Jumping into application");
 	#[cfg(feature = "uhyve")]
 	crate::uhyve::event("application entry");
+	#[cfg(target_arch = "x86_64")]
+	kernel::processor::marker(0x41);
 
 	#[cfg(not(test))]
 	unsafe {
@@ -116,6 +118,9 @@ pub fn boot_processor_main() -> ! {
 
 	#[cfg(all(target_arch = "x86_64", not(feature = "amd-sev")))]
 	kernel::sev_stub::ensure_sev_disabled();
+
+	#[cfg(target_arch = "x86_64")]
+	kernel::processor::marker(0x40);
 
 	// Initialize the kernel and hardware.
 	mm::claim_initial_heap();
